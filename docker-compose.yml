@@ -1,0 +1,38 @@
+services:
+  backend:
+    build:
+      dockerfile: server.Dockerfile
+      context: .
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+    volumes:
+      - mazi-data:/app/server/data
+      - mazi-avatars:/app/server/public/avatars
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:4000/rooms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      dockerfile: Dockerfile
+      context: .
+      args:
+        - API_INTERNAL_URL=http://backend:4000
+    ports:
+      - "3000:3000"
+    environment:
+      - API_INTERNAL_URL=http://backend:4000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mazi-data:
+  mazi-avatars:

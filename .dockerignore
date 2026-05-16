@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+*.zip
+server/node_modules
+server/data
+.next/cache
+next-env.d.ts
