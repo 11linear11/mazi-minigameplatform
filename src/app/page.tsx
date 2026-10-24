@@ -16,7 +16,7 @@ import DirectChatPanel from "@/components/DirectChatPanel";
 import LeaderboardModal from "@/components/LeaderboardModal";
 import CinemaModal from "@/components/CinemaModal";
 import type { DMConversation } from "@/components/DirectMessagesDrawer";
-import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film } from "lucide-react";
+import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film, Gamepad2 } from "lucide-react";
 import { getSocket } from "@/lib/socket";
 import { sounds } from "@/lib/sounds";
 
@@ -27,6 +27,7 @@ export default function HomePage() {
   const [messages, setMessages] = useState([] as any[]);
   const [members, setMembers] = useState([] as any[]);
   const [games, setGames] = useState([] as any[]);
+  const [infoDrawerTab, setInfoDrawerTab] = useState<"games" | "info">("games");
   const [showGameAdmin, setShowGameAdmin] = useState(false);
   const [rooms, setRooms] = useState([] as any[]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -584,7 +585,11 @@ export default function HomePage() {
     localStorage.setItem("gamechat-user", JSON.stringify(nextUser));
     setUser(nextUser);
     try {
-      const res = await fetch(`${API_URL}/profile/${userId}`);
+      const res = await fetch(`${API_URL}/profile/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, username, avatar }),
+      });
       const data = await res.json();
       if (data.profile) {
         setUserProfile(data.profile);
@@ -789,11 +794,31 @@ export default function HomePage() {
           >
             <Trophy size={18} />
           </button>
+          {selectedRoomId && (
+            <button
+              onClick={() => {
+                setInfoDrawerTab("games");
+                setShowInfoDrawer(true);
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-accent hover:text-accent-bright transition-colors"
+              title="لیست بازی‌ها"
+            >
+              <Gamepad2 size={19} />
+            </button>
+          )}
           <button
-            onClick={() => selectedRoomId ? setShowInfoDrawer(true) : setShowRoomDrawer(true)}
+            onClick={() => {
+              if (selectedRoomId) {
+                setInfoDrawerTab("info");
+                setShowInfoDrawer(true);
+              } else {
+                setShowRoomDrawer(true);
+              }
+            }}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:text-accent transition-colors"
+            title="اطلاعات روم و اعضا"
           >
-            <Users size={20} />
+            <Users size={19} />
           </button>
         </div>
       </header>
@@ -893,6 +918,8 @@ export default function HomePage() {
           ownerId={selectedRoom?.ownerId ?? null}
           roomAvatar={selectedRoom?.avatar ?? null}
           roomIcon={selectedRoom?.icon ?? "💬"}
+          activeTab={infoDrawerTab}
+          onTabChange={setInfoDrawerTab}
           onOpenDM={(userId, username, avatar) => {
             setActiveDMUser({ userId, username, avatar });
             setSidebarTab("dm");
@@ -991,7 +1018,7 @@ export default function HomePage() {
       </aside>
 
       {/* Info Drawer (left side in RTL) */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-[288px] border-r border-outline transition-transform duration-300 ease-in-out lg:hidden ${showInfoDrawer ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[320px] max-w-[85vw] border-r border-outline transition-transform duration-300 ease-in-out lg:hidden ${showInfoDrawer ? "translate-x-0" : "-translate-x-full"}`}>
         <RoomInfoPanel
           members={members}
           games={games}
@@ -1011,6 +1038,8 @@ export default function HomePage() {
           ownerId={selectedRoom?.ownerId ?? null}
           roomAvatar={selectedRoom?.avatar ?? null}
           roomIcon={selectedRoom?.icon ?? "💬"}
+          activeTab={infoDrawerTab}
+          onTabChange={setInfoDrawerTab}
           onOpenDM={(userId, username, avatar) => {
             setActiveDMUser({ userId, username, avatar });
             setSidebarTab("dm");
