@@ -80,8 +80,10 @@ export function applyUnoMove(state, payload) {
 
   currentPlayer.hand.splice(payload.cardIndex, 1);
   state.discard.push(card);
+  const VALID_COLORS = ["red", "yellow", "green", "blue"];
   if (card.type === "wild" || card.type === "wild_draw4") {
-    state.currentColor = payload.chosenColor ?? "red";
+    const chosen = String(payload.chosenColor || "").toLowerCase();
+    state.currentColor = VALID_COLORS.includes(chosen) ? chosen : "red";
     state.currentValue = card.type;
   } else {
     state.currentColor = card.color;
@@ -90,7 +92,11 @@ export function applyUnoMove(state, payload) {
 
   let skipCount = 0;
   if (card.type === "reverse") {
-    state.direction *= -1;
+    if (state.players.length === 2) {
+      skipCount = 1;
+    } else {
+      state.direction *= -1;
+    }
   }
   if (card.type === "skip") {
     skipCount = 1;
@@ -157,9 +163,13 @@ function canPlayCard(card, currentColor, currentValue) {
 }
 
 function drawCards(state, player, count) {
+  if (!player) return;
   for (let i = 0; i < count; i += 1) {
     if (state.deck.length === 0) {
       reshuffle(state);
+    }
+    if (state.deck.length === 0) {
+      break;
     }
     const card = state.deck.pop();
     if (card) {
@@ -176,11 +186,13 @@ function reshuffle(state) {
 
 function getNextPlayer(state, step) {
   const count = state.players.length;
-  const nextIndex = (state.currentPlayerIndex + state.direction * step + count) % count;
+  if (count === 0) return null;
+  const nextIndex = (((state.currentPlayerIndex + state.direction * step) % count) + count) % count;
   return state.players[nextIndex];
 }
 
 function advanceTurn(state, step) {
   const count = state.players.length;
-  state.currentPlayerIndex = (state.currentPlayerIndex + state.direction * step + count) % count;
+  if (count === 0) return;
+  state.currentPlayerIndex = (((state.currentPlayerIndex + state.direction * step) % count) + count) % count;
 }

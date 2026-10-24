@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Smile, Banana, Gamepad2, Users, Hash, X } from "lucide-react";
 import EmojiPicker, { type EmojiClickData, Theme as EmojiTheme, EmojiStyle } from "emoji-picker-react";
 import type { Message } from "@/data/mock";
@@ -101,7 +102,7 @@ export default function ChatPanel({
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-outline bg-panel-soft text-base">
                   {message.avatar &&
                   (message.avatar.startsWith("/avatars/") || message.avatar.startsWith("http")) ? (
-                    <img src={message.avatar} alt="" className="h-full w-full object-cover" />
+                    <Image src={message.avatar} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" />
                   ) : (
                     <span className="text-base">{message.avatar}</span>
                   )}

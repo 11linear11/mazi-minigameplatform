@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Camera, X } from "lucide-react";
 import type { Game } from "@/data/mock";
 import { GAME_ICONS } from "@/data/icons";
@@ -106,7 +107,7 @@ function GameConfigCard({
           className="flex h-14 w-14 cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-panel-highest text-xl ring-1 ring-outline transition-all duration-200 hover:ring-2 hover:ring-accent"
         >
           {avatarPreview ? (
-            <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+            <Image src={avatarPreview} alt="" width={56} height={56} unoptimized className="h-full w-full object-cover" />
           ) : (
             game.icon || GAME_ICONS[game.name] || "🎮"
           )}

@@ -1,11 +1,15 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Trophy, PartyPopper, Handshake, Clock, X } from "lucide-react";
+import { Trophy, PartyPopper, Handshake, Clock, X, Volume2, VolumeX, RotateCcw } from "lucide-react";
 import TicTacToeBoard from "@/components/TicTacToeBoard";
 import UnoGame from "@/components/UnoGame";
 import LockPickGame from "@/components/LockPickGame";
 import DotsAndBoxesBoard from "@/components/DotsAndBoxesBoard";
+import Connect4Board from "@/components/Connect4Board";
+import BattleshipBoard from "@/components/BattleshipBoard";
+import { sounds } from "@/lib/sounds";
 
 const ChessBoard = dynamic(() => import("@/components/ChessBoard"), { ssr: false });
 
@@ -25,10 +29,13 @@ type GameModalProps = {
   onStart: () => void;
   currentUserId?: string | null;
   onUnoAction: (payload: { type: "draw" | "play"; cardIndex?: number; chosenColor?: string }) => void;
-  onChessMove: (payload: { fromRow: number; fromCol: number; toRow: number; toCol: number }) => void;
+  onChessMove: (payload: { fromRow: number; fromCol: number; toRow: number; toCol: number; promotion?: string }) => void;
   onLockPickAction: (payload: any) => void;
   onDotsAndBoxesMove: (payload: { row: number; col: number; orientation: "h" | "v" }) => void;
+  onConnect4Move?: (payload: { col: number }) => void;
+  onBattleshipMove?: (payload: { row: number; col: number }) => void;
   onRequestEnd?: () => void;
+  onRematch?: () => void;
   endGameRequests?: string[];
   votedToEnd?: boolean;
 };
@@ -44,10 +51,46 @@ export default function GameModal({
   onChessMove,
   onLockPickAction,
   onDotsAndBoxesMove,
+  onConnect4Move,
+  onBattleshipMove,
   onRequestEnd,
+  onRematch,
   endGameRequests = [],
   votedToEnd = false,
 }: GameModalProps) {
+  const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    setIsMuted(sounds.isMuted());
+  }, []);
+
+  const toggleMute = () => {
+    const next = sounds.toggleMute();
+    setIsMuted(next);
+  };
+
+  const isFinished = session?.status === "finished";
+  const result = gameState?.result ?? {};
+  const winnerName = result.winnerName;
+  const isDraw = result.draw;
+  const iAmWinner = result.winner === currentUserId;
+
+  useEffect(() => {
+    if (gameState?.error && !isFinished) {
+      sounds.playError();
+    }
+  }, [gameState?.error, isFinished]);
+
+  useEffect(() => {
+    if (isFinished) {
+      if (iAmWinner) {
+        sounds.playWin();
+      } else {
+        sounds.playGameOver();
+      }
+    }
+  }, [isFinished, iAmWinner]);
+
   if (!session) {
     return null;
   }
@@ -56,10 +99,15 @@ export default function GameModal({
   const tttState = session.gameType === "Tic Tac Toe" ? gameState?.state : null;
   const lockPickState = session.gameType === "LockPick" ? gameState?.state : null;
   const dabState = session.gameType === "Dots & Boxes" ? gameState?.state : null;
-  const isFinished = session.status === "finished";
+  const c4State = session.gameType === "Connect 4" ? gameState?.state : null;
+  const battleshipState = session.gameType === "Battleship" ? gameState?.state : null;
   const isWaiting = session.status !== "active" && !isFinished;
   const isMyTurn = dabState
     ? dabState.players?.[dabState.currentPlayerIndex]?.userId === currentUserId
+    : c4State
+    ? c4State.players?.[c4State.currentPlayerIndex]?.userId === currentUserId
+    : battleshipState
+    ? battleshipState.players?.[battleshipState.currentPlayerIndex]?.userId === currentUserId
     : unoState
     ? unoState.players?.[unoState.currentPlayerIndex]?.userId === currentUserId
     : false;
@@ -68,23 +116,22 @@ export default function GameModal({
     session.hostId === currentUserId &&
     (session.players?.length ?? 0) >= (session.minPlayers ?? 2);
 
-  const result = gameState?.result ?? {};
-  const winnerName = result.winnerName;
-  const isDraw = result.draw;
-  const iAmWinner = result.winner === currentUserId;
-
   const disconnectedPlayers = (session.players ?? []).filter((p) => !p.connected);
 
   const renderGame = () => {
     if (tttState) {
+      const myTttPlayer = tttState.players?.find((p: any) => p.userId === currentUserId);
+      const isMyTurnTTT = Boolean(myTttPlayer) && myTttPlayer.symbol === tttState.currentPlayer && !isWaiting && !isFinished;
       return (
         <div className="flex items-center justify-center h-full w-full p-4">
           <div className="w-full max-w-sm">
             <TicTacToeBoard
               board={tttState.board}
               currentPlayer={tttState.currentPlayer}
+              playerSymbol={myTttPlayer?.symbol ?? null}
+              isMyTurn={isMyTurnTTT}
               onMove={(position) => onMove({ position })}
-              disabled={isWaiting}
+              disabled={isWaiting || isFinished || !isMyTurnTTT}
             />
           </div>
         </div>
@@ -132,6 +179,38 @@ export default function GameModal({
         </div>
       );
     }
+    if (c4State) {
+      return (
+        <div className="grid place-items-center h-full w-full p-4 overflow-y-auto">
+          <div className="w-full max-w-md">
+            <Connect4Board
+              state={c4State}
+              currentUserId={currentUserId ?? ""}
+              isMyTurn={isMyTurn}
+              isWaiting={isWaiting}
+              playersMeta={session.players}
+              onMove={(payload) => onConnect4Move?.(payload)}
+            />
+          </div>
+        </div>
+      );
+    }
+    if (battleshipState) {
+      return (
+        <div className="flex items-center justify-center h-full w-full p-2 sm:p-4 overflow-hidden">
+          <div className="w-full max-w-4xl max-h-full flex flex-col justify-center">
+            <BattleshipBoard
+              state={battleshipState}
+              currentUserId={currentUserId ?? ""}
+              isMyTurn={isMyTurn}
+              isWaiting={isWaiting}
+              playersMeta={session.players}
+              onMove={(payload) => onBattleshipMove?.(payload)}
+            />
+          </div>
+        </div>
+      );
+    }
     if (chessState) {
       return (
         <div className="flex items-center justify-center h-full w-full p-4">
@@ -166,13 +245,22 @@ export default function GameModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-panel-deep flex flex-col">
-      {/* Close button */}
-      <button
-        onClick={onClose}
-        className="absolute top-3 right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 backdrop-blur text-white/60 hover:text-white hover:bg-black/70 transition-all active:scale-90"
-      >
-        <X size={18} />
-      </button>
+      {/* Top right buttons (Sound toggle + Close) */}
+      <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
+        <button
+          onClick={toggleMute}
+          title={isMuted ? "وصل صدا" : "قطع صدا"}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-black/50 backdrop-blur text-white/60 hover:text-white hover:bg-black/70 transition-all active:scale-90"
+        >
+          {isMuted ? <VolumeX size={17} className="text-red-400" /> : <Volume2 size={17} className="text-accent" />}
+        </button>
+        <button
+          onClick={onClose}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-black/50 backdrop-blur text-white/60 hover:text-white hover:bg-black/70 transition-all active:scale-90"
+        >
+          <X size={18} />
+        </button>
+      </div>
 
       {/* End game request button */}
       {!isFinished && !isWaiting && onRequestEnd && (
@@ -193,8 +281,27 @@ export default function GameModal({
         </div>
       )}
 
+      {/* Error banner */}
+      {gameState?.error && !isFinished && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-bounce">
+          <div className="rounded-full bg-red-500/90 text-white text-xs px-4 py-1.5 shadow-lg backdrop-blur">
+            {gameState.error === "NOT_YOUR_TURN"
+              ? "هنوز نوبتت نشده!"
+              : gameState.error === "INVALID_MOVE"
+              ? "حرکت نامعتبر است!"
+              : gameState.error === "LINE_ALREADY_DRAWN"
+              ? "این خط قبلاً کشیده شده!"
+              : gameState.error === "CANNOT_PLAY"
+              ? "این کارت را نمی‌توانی بازی کنی!"
+              : gameState.error === "LOCK_FAILED"
+              ? "تطابق اشتباه است!"
+              : gameState.error}
+          </div>
+        </div>
+      )}
+
       {/* Game content */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         {renderGame()}
       </div>
 
@@ -228,12 +335,23 @@ export default function GameModal({
                   <p className="mt-1 text-sm text-muted">بازیکن قطع شد</p>
                 </>
               )}
-              <button
-                onClick={onClose}
-                className="mt-6 rounded-lg bg-accent-bright px-6 py-2.5 text-[13px] font-bold text-panel-deep transition-all hover:brightness-110"
-              >
-                بستن
-              </button>
+              <div className="mt-6 flex items-center justify-center gap-3">
+                <button
+                  onClick={onClose}
+                  className="rounded-xl bg-panel-soft px-5 py-2.5 text-[13px] text-muted transition-all hover:brightness-110 active:scale-95"
+                >
+                  بستن
+                </button>
+                {onRematch && (
+                  <button
+                    onClick={onRematch}
+                    className="flex items-center gap-2 rounded-xl bg-accent-bright px-5 py-2.5 text-[13px] font-bold text-panel-deep transition-all duration-200 hover:brightness-110 active:scale-95 shadow-lg shadow-accent/20"
+                  >
+                    <RotateCcw size={15} />
+                    بازی مجدد
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="w-full max-w-sm rounded-2xl border border-outline bg-panel p-6 text-center">

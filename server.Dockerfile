@@ -9,6 +9,8 @@ RUN npm ci
 FROM node:20-alpine AS production
 WORKDIR /app/server
 
+RUN apk add --no-cache libstdc++
+
 COPY --from=build /app/server/node_modules ./node_modules
 COPY server/ .
 

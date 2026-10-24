@@ -8,6 +8,7 @@ export function createChessState(hostId) {
     isCheckmate: false,
     winner: null,
     isDraw: false,
+    halfmoveClock: 0,
     moveHistory: [],
   };
 }
@@ -28,7 +29,7 @@ export function getPlayerColor(state, userId) {
   return player?.color ?? null;
 }
 
-export function applyChessMove(state, { userId, fromRow, fromCol, toRow, toCol }) {
+export function applyChessMove(state, { userId, fromRow, fromCol, toRow, toCol, promotion = "queen" }) {
   if (state.winner || state.isCheckmate || state.isDraw) {
     return { state, error: "GAME_OVER" };
   }
@@ -63,17 +64,35 @@ export function applyChessMove(state, { userId, fromRow, fromCol, toRow, toCol }
   state.board[toRow][toCol] = piece;
   state.board[fromRow][fromCol] = null;
 
-  // Pawn promotion (auto-queen)
+  // Pawn promotion
+  let promotedTo = null;
   if (piece.type === "pawn" && (toRow === 0 || toRow === 7)) {
-    state.board[toRow][toCol] = { type: "queen", color: piece.color };
+    const validPromos = ["queen", "rook", "bishop", "knight"];
+    promotedTo = validPromos.includes(promotion) ? promotion : "queen";
+    state.board[toRow][toCol] = { type: promotedTo, color: piece.color };
   }
 
-  state.moveHistory.push({ fromRow, fromCol, toRow, toCol, piece: piece.type, captured: captured?.type });
+  // Update halfmove clock (resets on pawn advance or capture)
+  if (piece.type === "pawn" || captured) {
+    state.halfmoveClock = 0;
+  } else {
+    state.halfmoveClock = (state.halfmoveClock || 0) + 1;
+  }
+
+  state.moveHistory.push({
+    fromRow,
+    fromCol,
+    toRow,
+    toCol,
+    piece: piece.type,
+    captured: captured?.type,
+    promotion: promotedTo,
+  });
 
   // Check if opponent in check or checkmate
   const opponentColor = color === "white" ? "black" : "white";
   const opponentKing = findKing(state.board, opponentColor);
-  if (isSquareAttacked(state.board, opponentKing.row, opponentKing.col, color)) {
+  if (opponentKing && isSquareAttacked(state.board, opponentKing.row, opponentKing.col, color)) {
     state.isCheck = true;
     if (isCheckmate(state, opponentColor)) {
       state.isCheckmate = true;
@@ -81,14 +100,36 @@ export function applyChessMove(state, { userId, fromRow, fromCol, toRow, toCol }
     }
   } else {
     state.isCheck = false;
-    // Check for stalemate
-    if (isStalemate(state, opponentColor)) {
+    // Check for stalemate, 50-move rule, or insufficient material
+    if (
+      isStalemate(state, opponentColor) ||
+      state.halfmoveClock >= 100 ||
+      hasInsufficientMaterial(state.board)
+    ) {
       state.isDraw = true;
     }
   }
 
   state.currentPlayer = opponentColor;
   return { state, error: null };
+}
+
+function hasInsufficientMaterial(board) {
+  const pieces = [];
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (p) pieces.push(p);
+    }
+  }
+  if (pieces.length === 2) return true; // Only two kings
+  if (pieces.length === 3) {
+    const nonKings = pieces.filter((p) => p.type !== "king");
+    if (nonKings.length === 1 && (nonKings[0].type === "bishop" || nonKings[0].type === "knight")) {
+      return true; // King + Minor piece vs King
+    }
+  }
+  return false;
 }
 
 function initialBoard() {
@@ -192,7 +233,7 @@ function getPawnMoves(state, row, col, color) {
   // Captures
   for (const dc of [-1, 1]) {
     const cCol = col + dc;
-    if (cCol >= 0 && cCol < 8) {
+    if (fRow >= 0 && fRow < 8 && cCol >= 0 && cCol < 8) {
       const target = state.board[fRow][cCol];
       if (target && target.color !== color) {
         moves.push({ row: fRow, col: cCol });

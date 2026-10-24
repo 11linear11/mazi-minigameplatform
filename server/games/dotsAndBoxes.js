@@ -66,17 +66,17 @@ export function applyDotsAndBoxesMove(state, { userId, row, col, orientation }) 
     return { state, error: "NOT_YOUR_TURN" };
   }
 
-  if (row < 0 || row > ROWS || col < 0 || col > COLS) {
-    return { state, error: "OUT_OF_BOUNDS" };
-  }
   if (orientation !== "h" && orientation !== "v") {
     return { state, error: "INVALID_ORIENTATION" };
   }
-  if (orientation === "h" && row > ROWS) {
-    return { state, error: "INVALID_MOVE" };
-  }
-  if (orientation === "v" && col > COLS) {
-    return { state, error: "INVALID_MOVE" };
+  if (orientation === "h") {
+    if (row < 0 || row > ROWS || col < 0 || col >= COLS) {
+      return { state, error: "OUT_OF_BOUNDS" };
+    }
+  } else {
+    if (row < 0 || row >= ROWS || col < 0 || col > COLS) {
+      return { state, error: "OUT_OF_BOUNDS" };
+    }
   }
 
   const grid = state.grid;
@@ -93,23 +93,23 @@ export function applyDotsAndBoxesMove(state, { userId, row, col, orientation }) 
   let scored = false;
 
   if (orientation === "h") {
-    if (row > 0 && isBoxComplete(grid, row - 1, col)) {
+    if (row > 0 && isBoxComplete(grid, row - 1, col) && grid[row - 1][col].p === 0) {
       grid[row - 1][col].p = playerNum;
       state.players[playerIndex].score++;
       scored = true;
     }
-    if (row < ROWS && isBoxComplete(grid, row, col)) {
+    if (row < ROWS && isBoxComplete(grid, row, col) && grid[row][col].p === 0) {
       grid[row][col].p = playerNum;
       state.players[playerIndex].score++;
       scored = true;
     }
   } else {
-    if (col > 0 && isBoxComplete(grid, row, col - 1)) {
+    if (col > 0 && isBoxComplete(grid, row, col - 1) && grid[row][col - 1].p === 0) {
       grid[row][col - 1].p = playerNum;
       state.players[playerIndex].score++;
       scored = true;
     }
-    if (col < COLS && isBoxComplete(grid, row, col)) {
+    if (col < COLS && isBoxComplete(grid, row, col) && grid[row][col].p === 0) {
       grid[row][col].p = playerNum;
       state.players[playerIndex].score++;
       scored = true;

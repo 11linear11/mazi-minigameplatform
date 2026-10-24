@@ -12,8 +12,12 @@ import RoomSettingsModal from "@/components/RoomSettingsModal";
 import RoomInfoPanel from "@/components/RoomInfoPanel";
 import RoomList from "@/components/RoomList";
 import LoadingScreen from "@/components/LoadingScreen";
-import { Hash, Menu, Banana, Users } from "lucide-react";
+import DirectChatPanel from "@/components/DirectChatPanel";
+import LeaderboardModal from "@/components/LeaderboardModal";
+import type { DMConversation } from "@/components/DirectMessagesDrawer";
+import { Hash, Menu, Banana, Users, MessageSquare, Trophy } from "lucide-react";
 import { getSocket } from "@/lib/socket";
+import { sounds } from "@/lib/sounds";
 
 const API_URL = "";
 
@@ -40,11 +44,31 @@ export default function HomePage() {
   const [endGameRequests, setEndGameRequests] = useState<Record<string, string[]>>({});
   const [showLoading, setShowLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [sidebarTab, setSidebarTab] = useState<"rooms" | "dm">("rooms");
+  const [activeDMUser, setActiveDMUser] = useState<{ userId: string; username: string; avatar: string } | null>(null);
+  const [dmConversations, setDmConversations] = useState<DMConversation[]>([]);
+  const [unreadDMCount, setUnreadDMCount] = useState(0);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const loadingStartRef = useRef(Date.now());
   const loadingDoneRef = useRef(false);
   const handleLoadingComplete = useCallback(() => {
     setShowLoading(false);
   }, []);
+
+  const loadDMConversations = useCallback(() => {
+    if (!user?.id) return;
+    if (socket?.connected) {
+      socket.emit("dm:get_conversations", {}, (res: any) => {
+        if (res?.conversations) setDmConversations(res.conversations);
+      });
+    }
+    fetch(`/dm/conversations?userId=${encodeURIComponent(user.id)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.conversations) setDmConversations(d.conversations);
+      })
+      .catch(() => {});
+  }, [user?.id, socket]);
 
   useEffect(() => {
     const stored = localStorage.getItem("gamechat-user");
@@ -61,8 +85,11 @@ export default function HomePage() {
     if (!user) {
       return;
     }
+    const token = typeof window !== "undefined" ? localStorage.getItem("gamechat-token") : null;
+    socket.auth = { token };
     socket.connect();
-    socket.emit("identify", { userId: user.id });
+    socket.emit("identify", { userId: user.id, token });
+    loadDMConversations();
 
     const handleMessage = (message: any) => {
       setMessages((prev) => [...prev, message]);
@@ -271,8 +298,40 @@ export default function HomePage() {
       // notification is handled via chat/system messages
     };
 
+    const handleUnreadCount = (payload: { count: number }) => {
+      setUnreadDMCount(payload?.count ?? 0);
+    };
+
+    const handleDMMessage = (msg: any) => {
+      loadDMConversations();
+      if (msg.receiverId === user?.id) {
+        setUnreadDMCount((prev) => prev + 1);
+        sounds.playPop();
+      }
+    };
+
+    const handleDMGameLaunch = ({ roomId, sessionId }: { roomId: string; sessionId: string; gameType: string }) => {
+      sounds.playBoxClaim();
+      setSelectedRoomId(roomId);
+      setActiveDMUser(null);
+      setSidebarTab("rooms");
+      setIsGameOpen(true);
+      if (user) {
+        socket.emit("join_room", {
+          roomId,
+          userId: user.id,
+          username: user.name,
+          avatar: user.avatar,
+        });
+        socket.emit("join_game", { sessionId, userId: user.id });
+      }
+    };
+
     socket.off("end_game_requested", handleEndGameRequested);
     socket.off("player_left_game", handlePlayerLeftGame);
+    socket.off("dm:unread_count", handleUnreadCount);
+    socket.off("dm:message", handleDMMessage);
+    socket.off("dm:game_launch", handleDMGameLaunch);
 
     socket.on("message_received", handleMessage);
     socket.on("room_joined", handleRoomJoined);
@@ -293,8 +352,14 @@ export default function HomePage() {
     socket.on("player_reconnected", handlePlayerReconnected);
     socket.on("end_game_requested", handleEndGameRequested);
     socket.on("player_left_game", handlePlayerLeftGame);
+    socket.on("dm:unread_count", handleUnreadCount);
+    socket.on("dm:message", handleDMMessage);
+    socket.on("dm:game_launch", handleDMGameLaunch);
 
     return () => {
+      socket.off("dm:unread_count", handleUnreadCount);
+      socket.off("dm:message", handleDMMessage);
+      socket.off("dm:game_launch", handleDMGameLaunch);
       socket.off("end_game_requested", handleEndGameRequested);
       socket.off("player_left_game", handlePlayerLeftGame);
       socket.off("message_received", handleMessage);
@@ -315,7 +380,7 @@ export default function HomePage() {
       socket.off("player_reconnected", handlePlayerReconnected);
       socket.disconnect();
     };
-  }, [rooms, socket, user]);
+  }, [rooms, socket, user, loadDMConversations]);
 
   useEffect(() => {
     if (!socket || !user) return;
@@ -377,7 +442,7 @@ export default function HomePage() {
     }
   }, [user]);
 
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = useCallback((content: string) => {
     if (!user || !selectedRoomId) {
       return;
     }
@@ -390,7 +455,7 @@ export default function HomePage() {
       time: new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }),
     };
     socket.emit("send_message", { roomId: selectedRoomId, message, userId: user.id });
-  };
+  }, [user, selectedRoomId, socket]);
 
   const handleStartGame = (gameType: string) => {
     if (!user || !selectedRoomId) {
@@ -412,7 +477,7 @@ export default function HomePage() {
     setIsGameOpen(true);
   };
 
-  const handleMove = (payload: { position: number }) => {
+  const handleMove = (payload: any) => {
     if (!selectedRoomId) return;
     const activeSession = roomSessions[selectedRoomId];
     if (!activeSession?.id || !user) {
@@ -449,13 +514,24 @@ export default function HomePage() {
     socket.emit("game_move", { sessionId: activeSession.id, userId: user.id, payload });
   };
 
-  const handleChessMove = (payload: { fromRow: number; fromCol: number; toRow: number; toCol: number }) => {
+  const handleChessMove = (payload: { fromRow: number; fromCol: number; toRow: number; toCol: number; promotion?: string }) => {
     if (!selectedRoomId) return;
     const activeSession = roomSessions[selectedRoomId];
     if (!activeSession?.id || !user) {
       return;
     }
     socket.emit("game_move", { sessionId: activeSession.id, userId: user.id, payload });
+  };
+
+  const handleRematch = () => {
+    if (!selectedRoomId || !user) return;
+    const activeSession = roomSessions[selectedRoomId];
+    if (!activeSession) return;
+    socket.emit("start_game", {
+      roomId: selectedRoomId,
+      gameType: activeSession.gameType,
+      hostId: user.id,
+    });
   };
 
   const handleLockPickAction = (payload: any) => {
@@ -525,6 +601,9 @@ export default function HomePage() {
     const data = await res.json();
     if (data.error || !data.profile) {
       return;
+    }
+    if (data.token) {
+      localStorage.setItem("gamechat-token", data.token);
     }
     const nextUser = {
       id: data.profile.userId,
@@ -691,12 +770,21 @@ export default function HomePage() {
         ) : (
           <p className="text-[15px] font-bold text-accent">MazI</p>
         )}
-        <button
-          onClick={() => selectedRoomId ? setShowInfoDrawer(true) : setShowRoomDrawer(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:text-accent transition-colors"
-        >
-          <Users size={20} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowLeaderboard(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-amber-400 hover:text-amber-300 transition-colors"
+            title="جدول برترین‌ها (Leaderboard)"
+          >
+            <Trophy size={18} />
+          </button>
+          <button
+            onClick={() => selectedRoomId ? setShowInfoDrawer(true) : setShowRoomDrawer(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:text-accent transition-colors"
+          >
+            <Users size={20} />
+          </button>
+        </div>
       </header>
 
       {/* Desktop 3-column grid */}
@@ -704,10 +792,15 @@ export default function HomePage() {
         <RoomList
           rooms={rooms}
           selectedRoomId={selectedRoomId ?? undefined}
-          onSelect={handleSelectRoom}
+          onSelect={(roomId) => {
+            setActiveDMUser(null);
+            setSidebarTab("rooms");
+            handleSelectRoom(roomId);
+          }}
           onCreateRoom={() => setShowCreateRoom(true)}
           isAdmin={userProfile?.isAdmin ?? false}
           onAdminGames={() => setShowGameAdmin(true)}
+          onOpenLeaderboard={() => setShowLeaderboard(true)}
           currentUser={user ? {
             id: user.id,
             name: user.name,
@@ -721,8 +814,31 @@ export default function HomePage() {
           } : null}
           onOpenProfile={() => setShowProfileModal(true)}
           unreadRoomIds={unreadRoomIds}
+          activeTab={sidebarTab}
+          onTabChange={(tab) => {
+            setSidebarTab(tab);
+            if (tab === "dm") loadDMConversations();
+          }}
+          conversations={dmConversations}
+          activeDMUserId={activeDMUser?.userId}
+          onSelectDM={(partner) => {
+            setActiveDMUser(partner);
+            setSidebarTab("dm");
+          }}
+          totalUnreadDMs={unreadDMCount}
         />
-        {selectedRoomId ? (
+        {activeDMUser ? (
+          <DirectChatPanel
+            partner={activeDMUser}
+            currentUserId={user?.id ?? ""}
+            socket={socket}
+            onBackToRoom={() => {
+              setActiveDMUser(null);
+              setSidebarTab("rooms");
+            }}
+            roomName={selectedRoom?.name ?? "روم"}
+          />
+        ) : selectedRoomId ? (
           <ChatPanel
             messages={messages}
             onSend={handleSendMessage}
@@ -764,12 +880,28 @@ export default function HomePage() {
           ownerId={selectedRoom?.ownerId ?? null}
           roomAvatar={selectedRoom?.avatar ?? null}
           roomIcon={selectedRoom?.icon ?? "💬"}
+          onOpenDM={(userId, username, avatar) => {
+            setActiveDMUser({ userId, username, avatar });
+            setSidebarTab("dm");
+            loadDMConversations();
+          }}
         />
       </div>
 
       {/* Mobile Chat Area */}
       <div className="flex-1 min-h-0 overflow-hidden lg:hidden">
-        {selectedRoomId ? (
+        {activeDMUser ? (
+          <DirectChatPanel
+            partner={activeDMUser}
+            currentUserId={user?.id ?? ""}
+            socket={socket}
+            onBackToRoom={() => {
+              setActiveDMUser(null);
+              setSidebarTab("rooms");
+            }}
+            roomName={selectedRoom?.name ?? "روم"}
+          />
+        ) : selectedRoomId ? (
           <ChatPanel
             messages={messages}
             onSend={handleSendMessage}
@@ -805,10 +937,16 @@ export default function HomePage() {
         <RoomList
           rooms={rooms}
           selectedRoomId={selectedRoomId ?? undefined}
-          onSelect={handleSelectRoom}
+          onSelect={(roomId) => {
+            setActiveDMUser(null);
+            setSidebarTab("rooms");
+            handleSelectRoom(roomId);
+            setShowRoomDrawer(false);
+          }}
           onCreateRoom={() => { setShowCreateRoom(true); setShowRoomDrawer(false); }}
           isAdmin={userProfile?.isAdmin ?? false}
           onAdminGames={() => { setShowGameAdmin(true); setShowRoomDrawer(false); }}
+          onOpenLeaderboard={() => { setShowLeaderboard(true); setShowRoomDrawer(false); }}
           currentUser={user ? {
             id: user.id,
             name: user.name,
@@ -822,6 +960,19 @@ export default function HomePage() {
           } : null}
           onOpenProfile={() => { setShowProfileModal(true); setShowRoomDrawer(false); }}
           unreadRoomIds={unreadRoomIds}
+          activeTab={sidebarTab}
+          onTabChange={(tab) => {
+            setSidebarTab(tab);
+            if (tab === "dm") loadDMConversations();
+          }}
+          conversations={dmConversations}
+          activeDMUserId={activeDMUser?.userId}
+          onSelectDM={(partner) => {
+            setActiveDMUser(partner);
+            setSidebarTab("dm");
+            setShowRoomDrawer(false);
+          }}
+          totalUnreadDMs={unreadDMCount}
         />
       </aside>
 
@@ -845,6 +996,12 @@ export default function HomePage() {
           ownerId={selectedRoom?.ownerId ?? null}
           roomAvatar={selectedRoom?.avatar ?? null}
           roomIcon={selectedRoom?.icon ?? "💬"}
+          onOpenDM={(userId, username, avatar) => {
+            setActiveDMUser({ userId, username, avatar });
+            setSidebarTab("dm");
+            loadDMConversations();
+            setShowInfoDrawer(false);
+          }}
         />
       </aside>
 
@@ -861,7 +1018,10 @@ export default function HomePage() {
           onChessMove={handleChessMove}
           onLockPickAction={handleLockPickAction}
           onDotsAndBoxesMove={handleDotsAndBoxesMove}
+          onConnect4Move={handleMove}
+          onBattleshipMove={handleMove}
           onRequestEnd={handleRequestEndGame}
+          onRematch={handleRematch}
           endGameRequests={activeSession ? (endGameRequests[activeSession.id] ?? []) : []}
           votedToEnd={activeSession && user ? (endGameRequests[activeSession.id] ?? []).includes(user.id) : false}
         />
@@ -928,6 +1088,7 @@ export default function HomePage() {
               socket.emit("leave_room", { roomId: selectedRoomId, userId: user.id });
             }
             localStorage.removeItem("gamechat-user");
+            localStorage.removeItem("gamechat-token");
             localStorage.removeItem("gamechat-private-access");
             setUser(null);
             setUserProfile(null);
@@ -970,6 +1131,12 @@ export default function HomePage() {
           onDeleteRoom={handleDeleteRoom}
         />
       )}
+      <LeaderboardModal
+        isOpen={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        currentUserId={user?.id}
+        socket={socket}
+      />
     </main>
       )}
     </>

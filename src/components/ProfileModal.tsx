@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Image from "next/image";
 import { X, User, Camera, Plus, LogOut } from "lucide-react";
 
 type ProfileModalProps = {
@@ -107,10 +108,8 @@ export default function ProfileModal({ user, apiUrl, onClose, onLogout, onProfil
             className="relative cursor-pointer"
             title="تغییر عکس پروفایل"
           >
-            {user.avatar && user.avatar.startsWith("http") ? (
-              <img src={user.avatar} alt="avatar" className="h-12 w-12 rounded-full object-cover ring-2 ring-accent" />
-            ) : user.avatar && user.avatar.startsWith("/avatars") ? (
-              <img src={user.avatar} alt="avatar" className="h-12 w-12 rounded-full object-cover ring-2 ring-accent" />
+            {user.avatar && (user.avatar.startsWith("http") || user.avatar.startsWith("/avatars")) ? (
+              <Image src={user.avatar} alt="avatar" width={48} height={48} unoptimized className="h-12 w-12 rounded-full object-cover ring-2 ring-accent" />
             ) : (
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/15 text-lg text-accent ring-2 ring-accent">
                 <User size={20} />

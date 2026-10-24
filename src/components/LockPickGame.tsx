@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Lock, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Check, AlertTriangle } from "lucide-react";
+import { sounds } from "@/lib/sounds";
 
 type RingData = {
   labels: string[];
@@ -90,7 +91,13 @@ export default function LockPickGame({ state, currentUserId, isWaiting, onAction
     }
   }, [myLocked, activeRing]);
 
+  const handleRotate = useCallback((direction: number) => {
+    sounds.playRatchet();
+    onAction({ type: "rotate", ringIndex: activeRing, direction });
+  }, [onAction, activeRing]);
+
   const handleLock = useCallback(() => {
+    sounds.playLockSuccess();
     onAction({ type: "lock", ringIndex: activeRing });
   }, [onAction, activeRing]);
 
@@ -108,26 +115,27 @@ export default function LockPickGame({ state, currentUserId, isWaiting, onAction
     }
   }, [state.startedAt, state.status, state.timerDuration]);
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (isWaiting || state.status !== "active") return;
     if (e.key === "ArrowLeft" || e.key === "a") {
-      onAction({ type: "rotate", ringIndex: activeRing, direction: -1 });
+      handleRotate(-1);
     } else if (e.key === "ArrowRight" || e.key === "d") {
-      onAction({ type: "rotate", ringIndex: activeRing, direction: 1 });
+      handleRotate(1);
     } else if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       handleLock();
     }
-  };
+  }, [isWaiting, state.status, handleRotate, handleLock]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [handleKeyDown]);
 
   const timerPct = timeLeft / state.timerDuration;
+  const isLowTime = timeLeft <= 10 && state.status === "active";
   const timerColor =
-    timerPct > 0.5 ? "bg-green-500" : timerPct > 0.2 ? "bg-yellow-500" : "bg-red-500";
+    timerPct > 0.5 ? "bg-green-500" : timerPct > 0.2 ? "bg-yellow-500" : "bg-red-500 animate-pulse";
 
   const lockDisabled = isWaiting || state.status !== "active" || myLocked[activeRing];
 
@@ -159,8 +167,11 @@ export default function LockPickGame({ state, currentUserId, isWaiting, onAction
           style={{ width: `${timerPct * 100}%` }}
         />
       </div>
-      <div className="mb-3 text-center text-[10px] text-muted">
-        {Math.ceil(timeLeft)} ثانیه
+      <div className={`mb-3 flex items-center justify-center gap-1 text-[11px] font-bold ${
+        isLowTime ? "text-red-400 animate-pulse" : "text-muted"
+      }`}>
+        {isLowTime && <AlertTriangle size={13} className="text-red-400" />}
+        <span>{Math.ceil(timeLeft)} ثانیه</span>
       </div>
 
       {/* SVG Board */}
@@ -289,7 +300,7 @@ export default function LockPickGame({ state, currentUserId, isWaiting, onAction
       {/* Controls */}
       <div className="mt-3 flex items-center justify-center gap-4" dir="ltr">
         <button
-          onClick={() => onAction({ type: "rotate", ringIndex: activeRing, direction: -1 })}
+          onClick={() => handleRotate(-1)}
           disabled={isWaiting || state.status !== "active" || myLocked[activeRing]}
           className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-xl text-white shadow-lg disabled:opacity-30 hover:bg-white/20 active:scale-90 transition-all"
         >
@@ -306,7 +317,7 @@ export default function LockPickGame({ state, currentUserId, isWaiting, onAction
           <Lock size={16} className="mr-1.5" />
         </button>
         <button
-          onClick={() => onAction({ type: "rotate", ringIndex: activeRing, direction: 1 })}
+          onClick={() => handleRotate(1)}
           disabled={isWaiting || state.status !== "active" || myLocked[activeRing]}
           className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-xl text-white shadow-lg disabled:opacity-30 hover:bg-white/20 active:scale-90 transition-all"
         >

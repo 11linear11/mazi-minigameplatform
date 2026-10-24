@@ -42,8 +42,20 @@ const nextConfig = {
         destination: `${apiInternal}/room/:path*`,
       },
       {
+        source: "/dm",
+        destination: `${apiInternal}/dm`,
+      },
+      {
+        source: "/dm/:path*",
+        destination: `${apiInternal}/dm/:path*`,
+      },
+      {
         source: "/health",
         destination: `${apiInternal}/health`,
+      },
+      {
+        source: "/leaderboard",
+        destination: `${apiInternal}/leaderboard`,
       },
     ];
   },

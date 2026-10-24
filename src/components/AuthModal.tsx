@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Image from "next/image";
 import { Camera, User } from "lucide-react";
 
 type AuthModalProps = {
@@ -33,8 +34,12 @@ export default function AuthModal({ onSubmit, onSubmitLogin, apiUrl }: AuthModal
     const formData = new FormData();
     formData.append("avatar", avatar);
     formData.append("userId", userId);
+    const token = typeof window !== "undefined" ? localStorage.getItem("gamechat-token") : null;
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${apiUrl}/profile/avatar`, {
       method: "POST",
+      headers,
       body: formData,
     });
     const data = await res.json();
@@ -62,6 +67,9 @@ export default function AuthModal({ onSubmit, onSubmitLogin, apiUrl }: AuthModal
       setLoading(false);
       setError(data.error);
       return;
+    }
+    if (data.token) {
+      localStorage.setItem("gamechat-token", data.token);
     }
 
     let avatarUrl = initialAvatar;
@@ -128,7 +136,7 @@ export default function AuthModal({ onSubmit, onSubmitLogin, apiUrl }: AuthModal
               className="flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-panel-deep transition-all duration-200 hover:ring-2 hover:ring-accent/50"
             >
               {avatarPreview ? (
-                <img src={avatarPreview} alt="preview" className="h-full w-full object-cover" />
+                <Image src={avatarPreview} alt="preview" width={64} height={64} unoptimized className="h-full w-full object-cover" />
               ) : (
                 <Camera size={24} className="text-muted/60" />
               )}

@@ -100,9 +100,22 @@ export function initDB() {
       createdAt TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS direct_messages (
+      id TEXT PRIMARY KEY,
+      senderId TEXT NOT NULL,
+      receiverId TEXT NOT NULL,
+      content TEXT NOT NULL,
+      type TEXT DEFAULT 'text',
+      metadata TEXT DEFAULT '{}',
+      isRead INTEGER DEFAULT 0,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(roomId, createdAt);
     CREATE INDEX IF NOT EXISTS idx_room_members_user ON room_members(userId);
     CREATE INDEX IF NOT EXISTS idx_invites_room ON invites(roomId);
+    CREATE INDEX IF NOT EXISTS idx_dm_pair ON direct_messages(senderId, receiverId, createdAt);
+    CREATE INDEX IF NOT EXISTS idx_dm_receiver_read ON direct_messages(receiverId, isRead);
   `);
 
   // migrations
@@ -120,6 +133,8 @@ export function initDB() {
   seed.run("chess", "Chess", "♟️", "شاهکار شطرنج", 2, 2);
   seed.run("lockpick", "LockPick", "🔒", "قفل باز کن!", 2, 2);
   seed.run("dots-and-boxes", "Dots & Boxes", "🔲", "نقطه‌بازی — هر خط بکش، جعبه‌ها رو بگیر!", 2, 2);
+  seed.run("connect4", "Connect 4", "🟡", "دوز چهارتایی — دیسک‌ها رو بنداز و ۴ تا پشت سر هم بچین!", 2, 2);
+  seed.run("battleship", "Battleship", "🚢", "نبرد ناوگان دریایی — کشتی‌های حریف رو با موشک‌های راداری غرق کن!", 2, 2);
 
   return _db;
 }

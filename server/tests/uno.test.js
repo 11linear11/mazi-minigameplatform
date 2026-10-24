@@ -39,3 +39,20 @@ addUnoPlayer(state, "p2");
     assert.equal(result.error, null);
   }
 }
+
+// 2-player reverse acts as skip (returns turn to player)
+{
+  const state2 = createUnoState("p1");
+  addUnoPlayer(state2, "p2");
+  startUnoGame(state2);
+  state2.players[0].hand = [{ color: "red", value: "reverse", type: "reverse" }];
+  state2.currentColor = "red";
+  state2.currentValue = 5;
+  state2.currentPlayerIndex = 0;
+
+  const result = applyUnoMove(state2, { userId: "p1", type: "play", cardIndex: 0 });
+  assert.equal(result.error, null);
+  // Hand is empty, player 1 wins!
+  assert.equal(state2.status, "finished");
+  assert.equal(state2.winnerId, "p1");
+}

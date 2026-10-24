@@ -2,11 +2,21 @@ import crypto from "node:crypto";
 import { getDB } from "./db.js";
 
 function hashPassword(password) {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derived = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${derived}`;
 }
 
-function verifyPassword(password, hash) {
-  return crypto.createHash("sha256").update(password).digest("hex") === hash;
+function verifyPassword(password, storedHash) {
+  if (!storedHash) return false;
+  if (!storedHash.includes(":")) {
+    return crypto.createHash("sha256").update(password).digest("hex") === storedHash;
+  }
+  const [salt, key] = storedHash.split(":");
+  if (!salt || !key) return false;
+  const keyBuffer = Buffer.from(key, "hex");
+  const derived = crypto.scryptSync(password, salt, 64);
+  return keyBuffer.length === derived.length && crypto.timingSafeEqual(keyBuffer, derived);
 }
 
 function rowToProfile(row) {
@@ -34,17 +44,20 @@ export function ensureProfile({ userId, username = "Guest", avatar = "👤", pas
   if (row) {
     const updates = [];
     const params = [];
-    if (username !== "Guest") {
-      updates.push("username = ?");
-      params.push(username);
+    // If the account has an existing passwordHash, do not allow guest overwriting of username/password
+    if (!row.passwordHash) {
+      if (username !== "Guest") {
+        updates.push("username = ?");
+        params.push(username);
+      }
+      if (password) {
+        updates.push("passwordHash = ?");
+        params.push(hashPassword(password));
+      }
     }
     if (avatar !== "👤") {
       updates.push("avatar = ?");
       params.push(avatar);
-    }
-    if (password) {
-      updates.push("passwordHash = ?");
-      params.push(hashPassword(password));
     }
     if (updates.length > 0) {
       params.push(userId);
@@ -79,14 +92,20 @@ export function authenticate(username, password) {
   return { profile, error: null };
 }
 
-export function changePassword(userId, newPassword) {
+export function changePassword(userId, newPassword, oldPassword = null) {
   const db = getDB();
-  const result = db.prepare("UPDATE users SET passwordHash = ? WHERE userId = ?").run(hashPassword(newPassword), userId);
-  if (result.changes === 0) {
+  const row = db.prepare("SELECT * FROM users WHERE userId = ?").get(userId);
+  if (!row) {
     return { error: "USER_NOT_FOUND" };
   }
-  const row = db.prepare("SELECT * FROM users WHERE userId = ?").get(userId);
-  return { profile: rowToProfile(row), error: null };
+  if (row.passwordHash && oldPassword !== null) {
+    if (!verifyPassword(oldPassword, row.passwordHash)) {
+      return { error: "INVALID_CURRENT_PASSWORD" };
+    }
+  }
+  db.prepare("UPDATE users SET passwordHash = ? WHERE userId = ?").run(hashPassword(newPassword), userId);
+  const updated = db.prepare("SELECT * FROM users WHERE userId = ?").get(userId);
+  return { profile: rowToProfile(updated), error: null };
 }
 
 export function updateStatus(userId, status) {
@@ -137,3 +156,59 @@ export function updateTags(userId, tags) {
   const row = db.prepare("SELECT * FROM users WHERE userId = ?").get(userId);
   return { profile: rowToProfile(row), error: null };
 }
+
+export function getLeaderboard(category = "overall", limit = 50) {
+  const db = getDB();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+
+  if (!category || category === "overall") {
+    const rows = db.prepare(`
+      SELECT userId, username, avatar, status, xp, level, wins, badges, tags, favoriteGames
+      FROM users
+      WHERE userId NOT LIKE 'test-user-%' AND (wins > 0 OR xp > 0)
+      ORDER BY wins DESC, xp DESC, level DESC
+      LIMIT ?
+    `).all(safeLimit);
+
+    return rows.map((r, index) => ({
+      rank: index + 1,
+      userId: r.userId,
+      username: r.username,
+      avatar: r.avatar,
+      status: r.status,
+      xp: r.xp,
+      level: r.level,
+      wins: r.wins,
+      badges: JSON.parse(r.badges || "[]"),
+      tags: JSON.parse(r.tags || "[]"),
+      favoriteGames: JSON.parse(r.favoriteGames || "[]"),
+    }));
+  }
+
+  // Filter by specific game
+  const rows = db.prepare(`
+    SELECT u.userId, u.username, u.avatar, u.status, u.xp, u.level, u.wins as totalWins, uw.count as gameWins, u.badges, u.tags, u.favoriteGames
+    FROM user_wins uw
+    JOIN users u ON uw.userId = u.userId
+    WHERE LOWER(uw.gameType) = LOWER(?) AND uw.count > 0 AND u.userId NOT LIKE 'test-user-%'
+    ORDER BY uw.count DESC, u.xp DESC
+    LIMIT ?
+  `).all(category, safeLimit);
+
+  return rows.map((r, index) => ({
+    rank: index + 1,
+    userId: r.userId,
+    username: r.username,
+    avatar: r.avatar,
+    status: r.status,
+    xp: r.xp,
+    level: r.level,
+    wins: r.gameWins,
+    totalWins: r.totalWins,
+    gameType: category,
+    badges: JSON.parse(r.badges || "[]"),
+    tags: JSON.parse(r.tags || "[]"),
+    favoriteGames: JSON.parse(r.favoriteGames || "[]"),
+  }));
+}
+

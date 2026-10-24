@@ -1,6 +1,8 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
+RUN apk add --no-cache libc6-compat
+
 ARG API_INTERNAL_URL
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
 

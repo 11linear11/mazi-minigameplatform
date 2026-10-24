@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 type LoadingScreenProps = {
   progress: number;
@@ -42,9 +43,12 @@ export default function LoadingScreen({ progress, onComplete }: LoadingScreenPro
       <main className="relative z-10 flex w-full max-w-lg flex-col items-center px-8">
         <div className="relative mb-12 flex h-64 w-64 items-center justify-center md:h-80 md:w-80">
           <div className="absolute inset-0 scale-125 transform rounded-full bg-accent-bright/5 blur-3xl" />
-          <img
+          <Image
             src="/assets/images/loading.png"
             alt="MazI"
+            width={320}
+            height={320}
+            priority
             className="relative h-full w-full object-contain drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
           />
         </div>

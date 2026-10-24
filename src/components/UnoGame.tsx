@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
-import { Hand, ChevronUp } from "lucide-react";
+import { Hand, ChevronUp, Zap } from "lucide-react";
+import { sounds } from "@/lib/sounds";
 
 type UnoCard = {
   color: string | null;
@@ -65,14 +64,20 @@ function getOpponentPosition(index: number, total: number) {
 
 export default function UnoGame({ state, currentUserId, isMyTurn, isWaiting, onAction, playersMeta }: UnoGameProps) {
   const [chosenColor, setChosenColor] = useState("red");
+  const [pendingWildIndex, setPendingWildIndex] = useState<number | null>(null);
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [topCardTilt, setTopCardTilt] = useState(-2);
   const handScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsTouchDevice("ontouchstart" in window);
   }, []);
+
+  useEffect(() => {
+    setTopCardTilt(Math.floor(Math.random() * 12) - 6);
+  }, [state.currentColor, state.currentValue]);
 
   const userNameMap: Record<string, string> = {};
   if (playersMeta) {
@@ -106,10 +111,16 @@ export default function UnoGame({ state, currentUserId, isMyTurn, isWaiting, onA
 
     setSelectedCardIndex(null);
     if (card.type === "wild" || card.type === "wild_draw4") {
-      onAction({ type: "play", cardIndex: index, chosenColor });
+      setPendingWildIndex(index);
     } else {
+      sounds.playCardPlay();
       onAction({ type: "play", cardIndex: index });
     }
+  };
+
+  const handleDraw = () => {
+    sounds.playCardDraw();
+    onAction({ type: "draw" });
   };
 
   if (!myPlayer) {
@@ -136,276 +147,172 @@ export default function UnoGame({ state, currentUserId, isMyTurn, isWaiting, onA
   const handCardBaseClasses = "w-[72px] h-[112px] lg:w-[130px] lg:h-[200px] rounded-xl lg:rounded-xl border-[3px] lg:border-[4px] border-white/90 card-shadow flex-shrink-0 flex flex-col items-center justify-center transition-all duration-200";
 
   return (
-    <div className="relative h-full w-full arena-surface">
-      {/* Ambient orbs */}
-      <div className="pointer-events-none absolute -left-32 -top-32 h-64 w-64 rounded-full bg-yellow-500/5 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 -right-32 h-64 w-64 rounded-full bg-yellow-500/5 blur-3xl" />
-      <div className="pointer-events-none absolute left-1/2 top-1/4 h-48 w-48 -translate-x-1/2 rounded-full bg-green-500/5 blur-3xl" />
+    <div className="relative h-full w-full arena-surface flex flex-col justify-between overflow-hidden select-none p-3 sm:p-4">
+      {/* Ambient background glows */}
+      <div className="pointer-events-none absolute -left-20 -top-20 h-44 w-44 rounded-full bg-yellow-500/10 blur-3xl" />
+      <div className="pointer-events-none absolute -right-20 -bottom-20 h-44 w-44 rounded-full bg-emerald-500/10 blur-3xl" />
 
-      {/* Gradient overlays */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-1/4 bg-gradient-to-b from-black/40 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/60 to-transparent" />
-
-      {/* Opponents - Desktop */}
-      <div className="hidden lg:block absolute inset-0 p-6">
-        {opponentPlayers.map((player, idx) => {
-          const isCurrent = player.userId === currentPlayer?.userId;
-          const color = playerColors[idx % playerColors.length];
-          const pos = getOpponentPosition(idx, opponentPlayers.length);
-          const name = displayName(player.userId);
-
-          const positionClasses = {
-            "left": "left-8 top-1/2 -translate-y-1/4",
-            "left-center": "left-12 top-1/3",
-            "left-mid": "left-8 top-1/4",
-            "right": "right-8 top-1/2 -translate-y-1/4",
-            "right-center": "right-12 top-1/3",
-            "right-mid": "right-8 top-1/4",
-            "top-center": "left-1/2 -translate-x-1/2 top-6",
-          }[pos] ?? "top-6 left-1/2 -translate-x-1/2";
-
-          return (
-            <div
-              key={player.userId}
-              className={`absolute flex flex-col items-center gap-2 transition-all ${positionClasses} ${
-                isCurrent ? "scale-110 z-10" : "opacity-80"
-              }`}
-            >
-              <div className="relative">
-                {isCurrent && (
-                  <div className="absolute inset-0 rounded-full gold-glow-strong animate-pulse" />
-                )}
-                <div
-                  className={`relative z-10 flex items-center justify-center rounded-full border-2 font-bold shadow-lg ${
-                    isCurrent
-                      ? `h-20 w-20 text-xl border-primary-container`
-                      : `h-16 w-16 text-base border-outline-variant`
-                  }`}
-                  style={{ backgroundColor: color, color: "#0D1117" }}
-                >
-                  {name[0].toUpperCase()}
-                </div>
-                <div className={`absolute -bottom-2 -right-2 bg-primary-container text-on-primary-container font-bold rounded-full gold-glow ${
-                  isCurrent ? "px-2.5 py-1 text-[12px]" : "px-2 py-0.5 text-[10px]"
-                }`}>
-                  {player.hand.length}
-                </div>
-              </div>
-              <span className={`font-semibold ${isCurrent ? "text-primary-container text-sm" : "text-secondary text-xs"}`}>
-                {name.length > 10 ? name.slice(0, 10) + "..." : name}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Opponents - Mobile */}
-      <div className="lg:hidden relative z-10 flex items-center justify-center gap-2 pt-3 px-4">
-        {opponentPlayers.map((player, idx) => {
-          const isCurrent = player.userId === currentPlayer?.userId;
-          const color = playerColors[idx % playerColors.length];
-          const name = displayName(player.userId);
-          return (
-            <div
-              key={player.userId}
-              className={`flex flex-col items-center gap-1 transition-all ${isCurrent ? "scale-110" : "opacity-70"}`}
-            >
-              <div className="relative">
-                {isCurrent && (
-                  <div className="absolute inset-0 rounded-full gold-glow-strong animate-pulse" />
-                )}
-                <div
-                  className={`relative z-10 flex items-center justify-center rounded-full border-2 font-bold shadow-lg ${
-                    isCurrent ? "h-11 w-11 border-primary-container" : "h-9 w-9 border-outline-variant"
-                  }`}
-                  style={{ backgroundColor: color, color: "#0D1117" }}
-                >
-                  {name[0].toUpperCase()}
-                </div>
-                <div className={`absolute -bottom-1.5 -right-1.5 bg-primary-container text-on-primary-container font-bold rounded-full gold-glow ${
-                  isCurrent ? "px-1.5 py-0.5 text-[10px]" : "px-1 py-0.5 text-[9px]"
-                }`}>
-                  {player.hand.length}
-                </div>
-              </div>
-              <span className={`text-[10px] font-semibold ${isCurrent ? "text-primary-container" : "text-secondary"}`}>
-                {name.length > 8 ? name.slice(0, 8) + "..." : name}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Turn Indicator */}
-      {!isWaiting && (
-        <div className="absolute left-1/2 top-[15%] lg:top-[12%] -translate-x-1/2 z-20 flex flex-col items-center gap-1 lg:gap-2">
-          <div className={`rounded-full shadow-2xl gold-glow border border-primary/20 ${
-            isMyTurn
-              ? "bg-primary-container text-on-primary-container"
-              : "bg-white/10 text-on-surface/60"
-          } ${isMyTurn ? "px-4 lg:px-8 py-1.5 lg:py-2" : "px-3 lg:px-5 py-1 lg:py-1.5"}`}>
-            <span className={`font-bold ${isMyTurn ? "text-sm lg:text-lg" : "text-[11px] lg:text-sm"}`}>
+      {/* TOP ZONE: Opponents Bar & Game Status */}
+      <div className="relative z-10 flex-none flex items-center justify-between border-b border-white/10 pb-2 px-1">
+        {/* Turn Status */}
+        <div className="flex items-center gap-2">
+          <div
+            className={`flex items-center gap-2 rounded-full px-3 sm:px-4 py-1 sm:py-1.5 text-xs font-bold transition-all shadow-lg backdrop-blur-md ${
+              isMyTurn
+                ? "bg-primary-container text-on-primary-container gold-glow ring-2 ring-primary-container/60 animate-pulse"
+                : "bg-white/10 text-white/80"
+            }`}
+          >
+            {isMyTurn && <span className="h-2 w-2 rounded-full bg-panel-deep animate-ping" />}
+            <span>
               {isMyTurn
-                ? "نوبت توئه!"
-                : `نوبت ${currentPlayer ? displayName(currentPlayer.userId).slice(0, 8) + "..." : "..."}`}
+                ? "نوبت شماست! (کارت بازی کن یا بکش)"
+                : `نوبت: ${currentPlayer ? displayName(currentPlayer.userId) : "..."}`}
             </span>
           </div>
-          {isMyTurn && (
-            <div className="flex items-center gap-1.5 text-primary-container/70 text-[10px] lg:text-xs">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary-container animate-pulse" />
-              <span>حرص بده!</span>
-            </div>
-          )}
         </div>
-      )}
 
-      {/* Center Play Zone */}
-      <div className="absolute inset-x-0 top-[28%] lg:top-[25%] bottom-[32%] lg:bottom-[28%] flex items-center justify-center">
-        <div className="flex items-center gap-6 lg:gap-12">
+        {/* Opponents List */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {opponentPlayers.map((player, idx) => {
+            const isCurrent = player.userId === currentPlayer?.userId;
+            const color = playerColors[idx % playerColors.length];
+            const name = displayName(player.userId);
+            return (
+              <div
+                key={player.userId}
+                className={`flex items-center gap-1.5 sm:gap-2 rounded-2xl px-2 sm:px-3 py-1 transition-all ${
+                  isCurrent
+                    ? "bg-white/20 ring-2 ring-accent gold-glow scale-105"
+                    : "bg-white/5 opacity-80"
+                }`}
+              >
+                <div
+                  className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full font-black text-xs shadow-md"
+                  style={{ backgroundColor: color, color: "#0D1117" }}
+                >
+                  {name[0]?.toUpperCase() ?? "?"}
+                </div>
+                <div className="flex flex-col text-right">
+                  <span className="text-[11px] font-bold text-white leading-tight">
+                    {name.length > 7 ? name.slice(0, 7) + ".." : name}
+                  </span>
+                  <span className="text-[10px] text-accent font-semibold">
+                    {player.hand.length} کارت {player.hand.length === 1 && "🔥 UNO!"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CENTER ZONE: Draw Pile & Discard Pile (Play Table) */}
+      <div className="relative z-10 flex-1 min-h-0 flex items-center justify-center my-auto">
+        <div className="flex items-center gap-6 sm:gap-12">
           {/* Draw Pile */}
           <button
-            onClick={() => onAction({ type: "draw" })}
+            onClick={handleDraw}
             disabled={!isMyTurn || isWaiting}
-            className="relative group cursor-pointer active:scale-95 transition-transform disabled:cursor-not-allowed disabled:opacity-60"
+            className="group relative flex flex-col items-center cursor-pointer transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <div className="hidden lg:block absolute -bottom-2 -right-2 w-full h-full bg-surface-container rounded-xl -z-10 border border-outline/20" />
-            <div className="hidden lg:block absolute -bottom-4 -right-4 w-full h-full bg-surface-container-low rounded-xl -z-20 border border-outline/10" />
-            <div className="relative w-24 h-30 lg:w-[140px] lg:h-[210px] bg-surface-container-highest rounded-xl lg:rounded-xl border-2 border-outline/30 card-shadow overflow-hidden flex items-center justify-center">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent" />
-              <div className="w-[72px] h-[96px] lg:w-[110px] lg:h-[160px] border-[3px] lg:border-4 border-primary-container/20 rounded-lg lg:rounded-lg flex items-center justify-center">
-                <span className="font-black text-primary-container/20 text-lg lg:text-2xl italic tracking-tighter">MAZI</span>
+            <div className="relative w-20 h-28 sm:w-28 sm:h-40 rounded-2xl bg-surface-container-highest border-2 border-outline/40 shadow-2xl flex flex-col items-center justify-center overflow-hidden transition-all group-hover:scale-105 group-hover:border-accent">
+              <div className="w-14 h-22 sm:w-20 sm:h-32 border-2 border-primary-container/30 rounded-xl flex items-center justify-center">
+                <span className="font-black text-primary-container text-sm sm:text-lg italic tracking-wider">
+                  MAZI
+                </span>
               </div>
             </div>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              <div className="bg-primary-container text-on-primary-container px-2 lg:px-4 py-1 lg:py-2 rounded-lg font-bold text-[10px] lg:text-sm whitespace-nowrap shadow-xl">
-                کارت بکش
-              </div>
-            </div>
+            <span className="mt-2 rounded-full bg-white/10 px-3 py-0.5 text-[10px] sm:text-xs font-bold text-white/90 group-hover:bg-accent group-hover:text-panel-deep transition-colors">
+              کارت بکش
+            </span>
           </button>
 
-          {/* Current Card (Discard Pile) */}
-          <div className="relative">
+          {/* Current Discard Card */}
+          <div className="relative flex flex-col items-center">
+            {(topCard.value === "draw2" || topCard.value === "wild_draw4") && (
+              <div className="absolute -inset-3 rounded-2xl border-2 border-red-500/80 animate-ping pointer-events-none" />
+            )}
             <div
-              className={`w-24 h-30 lg:w-[160px] lg:h-[240px] rounded-xl lg:rounded-2xl border-[4px] lg:border-[6px] border-white card-shadow flex flex-col items-center justify-between p-2 lg:p-4 relative overflow-hidden transition-all duration-300 ${
-                topCard.color
-                  ? `${CARD_BG[topCard.color]}`
-                  : "bg-surface-container-highest"
+              className={`w-20 h-28 sm:w-28 sm:h-40 rounded-2xl border-[3px] sm:border-[4px] border-white shadow-2xl flex flex-col items-center justify-between p-2 relative overflow-hidden transition-all duration-300 ${
+                topCard.color ? CARD_BG[topCard.color] : "bg-surface-container-highest"
               }`}
-              style={!topCard.color ? {
-                background: "conic-gradient(red 0deg 90deg, yellow 90deg 180deg, green 180deg 270deg, blue 270deg 360deg)",
-              } : undefined}
+              style={
+                !topCard.color
+                  ? { background: "conic-gradient(red 0deg 90deg, yellow 90deg 180deg, green 180deg 270deg, blue 270deg 360deg)" }
+                  : { transform: `rotate(${topCardTilt}deg)` }
+              }
             >
-              <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-white/10 pointer-events-none" />
-
               {topCard.color ? (
                 <>
-                  <div className="self-start relative z-10">
-                    <span className="text-base lg:text-[40px] leading-none text-white font-black drop-shadow-2xl">
+                  <span className="self-start text-xs sm:text-lg font-black text-white leading-none">
+                    {cardSymbol(topCard.value)}
+                  </span>
+                  <div className="w-9 h-9 sm:w-14 sm:h-14 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm border border-white/40">
+                    <span className="text-sm sm:text-2xl font-black text-white italic">
                       {cardSymbol(topCard.value)}
                     </span>
                   </div>
-                  <div className="w-10 h-10 lg:w-24 lg:h-24 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/30 relative z-10">
-                    <span className="text-white font-black italic tracking-tighter text-base lg:text-[32px] drop-shadow-2xl">
-                      {cardSymbol(topCard.value)}
-                    </span>
-                  </div>
-                  <div className="self-end rotate-180 relative z-10">
-                    <span className="text-base lg:text-[40px] leading-none text-white font-black drop-shadow-2xl">
-                      {cardSymbol(topCard.value)}
-                    </span>
-                  </div>
+                  <span className="self-end text-xs sm:text-lg font-black text-white leading-none rotate-180">
+                    {cardSymbol(topCard.value)}
+                  </span>
                 </>
               ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-0.5 lg:gap-1 rotate-45 scale-[0.6] lg:scale-100">
-                    <div className="h-3 w-3 lg:h-8 lg:w-8 rounded-tl-lg bg-red-500" />
-                    <div className="h-3 w-3 lg:h-8 lg:w-8 rounded-tr-lg bg-yellow-500" />
-                    <div className="h-3 w-3 lg:h-8 lg:w-8 rounded-bl-lg bg-green-500" />
-                    <div className="h-3 w-3 lg:h-8 lg:w-8 rounded-br-lg bg-blue-500" />
-                  </div>
-                  <span className="mt-1 text-[9px] lg:text-xs font-bold text-white/70 drop-shadow relative z-10">Wild</span>
-                </>
+                <div className="flex flex-col items-center justify-center h-full">
+                  <span className="text-xs sm:text-base font-black text-white drop-shadow">Wild</span>
+                </div>
               )}
             </div>
-            <div className={`absolute -inset-2 lg:-inset-4 blur-xl lg:blur-2xl -z-10 rounded-full ${
-              topCard.color === "red" ? "bg-red-500/20" :
-              topCard.color === "yellow" ? "bg-yellow-500/20" :
-              topCard.color === "green" ? "bg-green-500/20" :
-              topCard.color === "blue" ? "bg-blue-500/20" :
-              "bg-white/10"
-            }`} />
+
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] sm:text-xs text-white/70">
+              <span>رنگ فعال:</span>
+              <span
+                className="inline-block h-3.5 w-3.5 rounded-full border border-white shadow"
+                style={{
+                  backgroundColor:
+                    topCard.color === "red"
+                      ? "#ef4444"
+                      : topCard.color === "yellow"
+                      ? "#eab308"
+                      : topCard.color === "green"
+                      ? "#22c55e"
+                      : topCard.color === "blue"
+                      ? "#3b82f6"
+                      : "#ffffff",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* BOTTOM ZONE: Hand Bar & Cards */}
+      <div className="relative z-10 flex-none flex flex-col items-center gap-1 w-full max-w-4xl mx-auto pb-1">
+        {/* Hand Status & UNO button */}
+        <div className="w-full flex items-center justify-between px-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="rounded-xl bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/80">
+              دست شما: {myPlayer.hand.length} کارت
+            </span>
           </div>
 
-          {/* Color Picker (desktop) */}
-          {isMyTurn && !isWaiting && (
-            <div className="hidden lg:flex absolute -right-44 flex-col gap-3 p-4 glass-card rounded-2xl">
-              <span className="font-semibold text-secondary text-[10px] uppercase tracking-widest text-center">رنگ</span>
-              <div className="grid grid-cols-2 gap-3">
-                {(["red", "blue", "yellow", "green"] as const).map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setChosenColor(color)}
-                    className={`w-10 h-10 rounded-full border-2 transition-all ${
-                      color === "red" ? "bg-red-500" :
-                      color === "blue" ? "bg-blue-500" :
-                      color === "yellow" ? "bg-yellow-400" :
-                      "bg-green-500"
-                    } ${
-                      chosenColor === color
-                        ? "border-white scale-110 gold-glow"
-                        : "border-white/20 hover:scale-110 hover:border-white"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {myPlayer.hand.length === 2 && isMyTurn && (
+              <button
+                className="flex items-center gap-1 rounded-full bg-gradient-to-r from-red-600 to-rose-500 px-3.5 py-1 font-black text-white text-[11px] shadow-lg shadow-red-500/40 animate-bounce active:scale-95"
+              >
+                🔥 UNO!
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Color Picker (mobile) */}
-      {isMyTurn && !isWaiting && (
-        <div className="lg:hidden absolute left-1/2 -translate-x-1/2 bottom-[26%] z-20 flex items-center gap-2">
-          <span className="text-[9px] text-white/50 font-medium">رنگ:</span>
-          {(["red", "blue", "yellow", "green"] as const).map((color) => (
-            <button
-              key={color}
-              onClick={() => setChosenColor(color)}
-              className={`w-5 h-5 rounded-full border transition-all ${
-                chosenColor === color ? "border-white scale-125 ring-1 ring-white" : "border-white/30 opacity-60"
-              } ${color === "red" ? "bg-red-500" : color === "blue" ? "bg-blue-500" : color === "yellow" ? "bg-yellow-400" : "bg-green-500"}`}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* HUD - Player info (desktop) */}
-      <div className="hidden lg:flex absolute bottom-8 left-8 items-center gap-4 z-10">
-        <div className="flex flex-col">
-          <span className="font-semibold text-secondary text-[10px] uppercase tracking-widest">بازیکن</span>
-          <span className="font-bold text-primary-container text-lg">{displayName(currentUserId)}</span>
-        </div>
-        <div className="h-10 w-[2px] bg-outline-variant/30" />
-        <div className="flex flex-col">
-          <span className="font-semibold text-secondary text-[10px] uppercase tracking-widest">کارت‌ها</span>
-          <span className="font-bold text-lg">{myPlayer.hand.length}</span>
-        </div>
-      </div>
-
-      {/* Player Hand */}
-      <div className="absolute bottom-[6%] lg:bottom-[-60px] left-0 right-0 overflow-x-auto scrollbar-hidden pb-1">
-        <div className="flex -space-x-4 lg:-space-x-16 items-end justify-center min-w-max px-4 lg:px-24">
-          {myPlayer.hand.length === 0 ? (
-            <div className="flex h-24 items-center justify-center text-xs text-white/40">
-              کارتی نداری!
-            </div>
-          ) : (
-            myPlayer.hand.map((card, index) => {
+        {/* Horizontal Cards Scrollable Tray */}
+        <div className="w-full overflow-x-auto scrollbar-hidden py-2 px-2">
+          <div className="flex -space-x-3 sm:-space-x-4 lg:-space-x-5 items-end justify-center min-w-max pb-2 pt-3">
+            {myPlayer.hand.map((card, index) => {
               const playable = canPlayCard(card);
-              const isHov = !isTouchDevice && hoveredCard === index;
-              const isSel = isCardSelected(index);
-              const rotation = getRotation(index);
-
+              const isHov = hoveredCard === index;
               return (
                 <button
                   key={`${card.color}-${card.value}-${index}`}
@@ -413,120 +320,94 @@ export default function UnoGame({ state, currentUserId, isMyTurn, isWaiting, onA
                   disabled={!playable}
                   onMouseEnter={() => setHoveredCard(index)}
                   onMouseLeave={() => setHoveredCard(null)}
-                  className={`relative flex flex-col items-center justify-center z-10 transition-all duration-200 ${
-                    isSel ? "-translate-y-6 lg:-translate-y-10" : isHov ? "-translate-y-4 lg:-translate-y-6" : ""
+                  className={`relative flex flex-col items-center justify-center transition-all duration-200 select-none ${
+                    isHov && playable ? "-translate-y-4 scale-110 z-30" : "z-10"
                   }`}
-                  style={{
-                    zIndex: isSel ? 60 : hoveredCard === index ? 55 : index,
-                    transform: `rotate(${rotation}deg)${isSel ? " scale(1.08)" : isHov ? " scale(1.05)" : ""}`,
-                  }}
+                  style={{ zIndex: isHov ? 50 : index }}
                 >
                   <div
-                    className={`${handCardBaseClasses} ${
-                      !playable
-                        ? "opacity-40 cursor-not-allowed"
-                        : "cursor-pointer"
-                    } ${
-                      card.color
-                        ? `${CARD_BG[card.color]}`
-                        : "bg-surface-container-highest border-white/40"
-                    } ${isSel ? "ring-2 lg:ring-4 ring-primary-container/40" : ""}`}
-                    style={!card.color ? {
-                      background: "conic-gradient(red 0deg 90deg, yellow 90deg 180deg, green 180deg 270deg, blue 270deg 360deg)",
-                      borderColor: isSel ? "rgba(255,215,0,0.8)" : "rgba(255,255,255,0.6)",
-                    } : undefined}
+                    className={`w-14 h-22 sm:w-18 sm:h-28 lg:w-20 lg:h-32 rounded-xl border-2 sm:border-[3px] border-white/90 shadow-xl flex flex-col items-center justify-between p-1.5 transition-all ${
+                      !playable ? "opacity-40 cursor-not-allowed grayscale-[40%]" : "cursor-pointer hover:border-yellow-300"
+                    } ${card.color ? CARD_BG[card.color] : "bg-surface-container-highest"}`}
+                    style={
+                      !card.color
+                        ? { background: "conic-gradient(red 0deg 90deg, yellow 90deg 180deg, green 180deg 270deg, blue 270deg 360deg)" }
+                        : undefined
+                    }
                   >
                     {card.color ? (
                       <>
-                        <span className="text-xl lg:text-[60px] font-black text-white drop-shadow-2xl leading-none">
-                          {typeof card.value === "number" && !isNaN(card.value)
-                            ? card.value
-                            : cardSymbol(card.value)}
+                        <span className="self-start text-[11px] sm:text-sm font-black text-white leading-none">
+                          {cardSymbol(card.value)}
+                        </span>
+                        <span className="text-base sm:text-2xl font-black text-white drop-shadow">
+                          {cardSymbol(card.value)}
+                        </span>
+                        <span className="self-end text-[11px] sm:text-sm font-black text-white leading-none rotate-180">
+                          {cardSymbol(card.value)}
                         </span>
                       </>
                     ) : (
-                      <>
-                        <div className="grid grid-cols-2 gap-0.5 rotate-45 scale-[0.5] lg:scale-[0.8]">
-                          <div className="h-3 w-3 lg:h-5 lg:w-5 rounded-tl-lg bg-red-500" />
-                          <div className="h-3 w-3 lg:h-5 lg:w-5 rounded-tr-lg bg-yellow-500" />
-                          <div className="h-3 w-3 lg:h-5 lg:w-5 rounded-bl-lg bg-green-500" />
-                          <div className="h-3 w-3 lg:h-5 lg:w-5 rounded-br-lg bg-blue-500" />
-                        </div>
-                        <span className="text-[10px] lg:text-sm font-bold text-white/80 drop-shadow">
-                          {card.type === "wild_draw4" ? "+۴" : "★"}
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <span className="text-[10px] sm:text-xs font-black text-white">
+                          {card.type === "wild_draw4" ? "+4" : "★"}
                         </span>
-                      </>
-                    )}
-
-                    {playable && (
-                      <div className={`absolute -top-1.5 -right-1.5 lg:-top-2 lg:-right-2 h-3 w-3 lg:h-4 lg:w-4 rounded-full transition-all ${
-                        isSel ? "bg-white scale-125 ring-2 ring-primary-container" : "bg-primary-container shadow-lg ring-1 ring-primary-container/50"
-                      }`} />
+                      </div>
                     )}
                   </div>
-
-                  {/* Selection arrow */}
-                  {(isSel || (isHov && playable)) && (
-                    <div className={`absolute -top-8 lg:-top-12 left-1/2 -translate-x-1/2 rounded-full gold-glow transition-all ${
-                      isSel ? "bg-primary-container text-on-primary-container p-0.5 lg:p-1" : "bg-primary-container/60 text-on-primary-container/60 p-0.5 lg:p-1"
-                    }`}>
-                      <ChevronUp size={14} className="lg:hidden" />
-                      <ChevronUp size={22} className="hidden lg:block" />
-                    </div>
-                  )}
                 </button>
               );
-            })
-          )}
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Action Buttons - Desktop */}
-      <div className="hidden lg:flex absolute bottom-8 right-8 flex-col gap-4 z-10">
-        <button
-          onClick={() => onAction({ type: "draw" })}
-          disabled={!isMyTurn || isWaiting}
-          className="bg-primary-container text-on-primary-container px-10 py-4 rounded-xl font-bold text-lg gold-glow hover:brightness-110 transition-all flex items-center gap-3 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <Hand size={20} />
-          کارت بکش
-        </button>
-        {isMyTurn && myPlayer.hand.length === 2 && (
-          <button
-            className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-br from-red-500 to-red-700 text-sm font-black text-white shadow-2xl shadow-red-500/30 hover:shadow-red-500/50 hover:scale-105 hover:brightness-110 transition-all active:scale-90 ring-2 ring-red-400/30 mx-auto"
-            title="UNO"
-          >
-            UNO
-          </button>
-        )}
-      </div>
-
-      {/* Action Buttons - Mobile */}
-      <div className="lg:hidden absolute bottom-[1%] inset-x-0 flex items-center justify-between px-4 z-10">
-        <button
-          onClick={() => onAction({ type: "draw" })}
-          disabled={!isMyTurn || isWaiting}
-          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-primary-container to-accent-bright px-5 py-2.5 text-[12px] font-bold text-panel-deep shadow-lg shadow-yellow-500/20 hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
-        >
-          <Hand size={14} />
-          {isMyTurn ? "کارت بکش" : "..."}
-        </button>
-
-        {isMyTurn && myPlayer.hand.length === 2 && (
-          <button className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-red-700 text-[11px] font-black text-white shadow-2xl shadow-red-500/30 ring-2 ring-red-400/30 active:scale-90 transition-all">
-            UNO
-          </button>
-        )}
-
-        {isTouchDevice && selectedCardIndex !== null && (
-          <button
-            onClick={() => setSelectedCardIndex(null)}
-            className="text-[10px] text-white/40 bg-white/10 px-2 py-1 rounded-full"
-          >
-            لغو
-          </button>
-        )}
-      </div>
+      {/* Wild Color Selection Modal */}
+      {pendingWildIndex !== null && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div className="w-full max-w-xs rounded-2xl border border-outline bg-panel-dim p-5 text-center shadow-2xl">
+            <h3 className="text-base font-bold text-on-surface mb-2">رنگ کارت را انتخاب کن</h3>
+            <p className="text-xs text-muted mb-5">رنگ مورد نظر برای ادامه بازی چیست؟</p>
+            <div className="grid grid-cols-2 gap-3">
+              {(["red", "blue", "yellow", "green"] as const).map((color) => {
+                const colorNames: Record<string, string> = {
+                  red: "قرمز",
+                  blue: "آبی",
+                  yellow: "زرد",
+                  green: "سبز",
+                };
+                return (
+                  <button
+                    key={color}
+                    onClick={() => {
+                      sounds.playCardPlay();
+                      onAction({ type: "play", cardIndex: pendingWildIndex, chosenColor: color });
+                      setPendingWildIndex(null);
+                    }}
+                    className={`flex items-center justify-center py-2.5 px-3 rounded-xl font-bold shadow-lg transition-transform hover:scale-105 active:scale-95 ${
+                      color === "red"
+                        ? "bg-red-500 text-white hover:bg-red-600"
+                        : color === "blue"
+                        ? "bg-blue-500 text-white hover:bg-blue-600"
+                        : color === "yellow"
+                        ? "bg-yellow-400 text-black hover:bg-yellow-500"
+                        : "bg-green-500 text-white hover:bg-green-600"
+                    }`}
+                  >
+                    {colorNames[color]}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setPendingWildIndex(null)}
+              className="mt-4 text-xs text-muted hover:text-white transition-colors"
+            >
+              انصراف
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

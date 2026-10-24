@@ -19,35 +19,49 @@ function randInt(min, max) {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
+export function isRotationValid(ring, rotation) {
+  if (!ring.slotPositions || ring.slotPositions.length === 0) return false;
+  for (const slotPos of ring.slotPositions) {
+    const ballAtPos = (slotPos - rotation + NUM_POSITIONS) % NUM_POSITIONS;
+    if (!ring.ballPositions.includes(ballAtPos)) {
+      return false;
+    }
+    if (ring.labels[ballAtPos] !== ring.labels[slotPos]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function generateRing() {
   const labels = Array.from({ length: NUM_POSITIONS }, () => COLORS[Math.floor(Math.random() * 3)]);
 
-  const numBalls = randInt(3, 5);
-  const ballPositions = pickRandom([0, 1, 2, 3, 4, 5, 6, 7], numBalls);
-
-  const numSlots = randInt(2, 4);
+  const numSlots = randInt(2, 3);
   const slotPositions = pickRandom([0, 1, 2, 3, 4, 5, 6, 7], numSlots);
 
+  const numBalls = randInt(numSlots, 5);
+  const ballPositions = pickRandom([0, 1, 2, 3, 4, 5, 6, 7], numBalls);
+
+  const dummyRing = { labels, ballPositions, slotPositions };
   const validRotations = [];
   for (let R = 0; R < NUM_POSITIONS; R++) {
-    let valid = true;
-    for (const ball of ballPositions) {
-      const pos = (ball + R) % NUM_POSITIONS;
-      if (slotPositions.includes(pos)) {
-        if (labels[ball] !== labels[pos]) {
-          valid = false;
-          break;
-        }
-      }
+    if (isRotationValid(dummyRing, R)) {
+      validRotations.push(R);
     }
-    if (valid) validRotations.push(R);
   }
 
-  if (validRotations.length === 0) return generateRing();
+  if (validRotations.length === 0 || validRotations.length >= 7) {
+    return generateRing();
+  }
 
   const solutionRotation = validRotations[0];
-  let initialRotation = (solutionRotation + 1 + randInt(0, 6)) % NUM_POSITIONS;
-  if (initialRotation === solutionRotation) initialRotation = (initialRotation + 1) % NUM_POSITIONS;
+  const invalidRotations = [];
+  for (let R = 0; R < NUM_POSITIONS; R++) {
+    if (!validRotations.includes(R)) {
+      invalidRotations.push(R);
+    }
+  }
+  const initialRotation = invalidRotations[randInt(0, invalidRotations.length - 1)];
 
   return { labels, ballPositions, slotPositions, initialRotation };
 }
@@ -112,18 +126,7 @@ export function applyLockPickMove(state, { userId, payload }) {
     const ring = state.rings[ringIndex];
     const rotation = player.currentRotations[ringIndex];
 
-    let valid = true;
-    for (const slotPos of ring.slotPositions) {
-      const ballAtPos = (slotPos - rotation + NUM_POSITIONS) % NUM_POSITIONS;
-      if (ring.ballPositions.includes(ballAtPos)) {
-        if (ring.labels[ballAtPos] !== ring.labels[slotPos]) {
-          valid = false;
-          break;
-        }
-      }
-    }
-
-    if (valid) {
+    if (isRotationValid(ring, rotation)) {
       player.locked[ringIndex] = true;
       if (player.locked.every(Boolean)) {
         const winnerProfile = getProfile ? getProfile(userId) : null;
@@ -144,17 +147,20 @@ export function finishGame(state) {
   if (state.status === "finished") return;
   state.status = "finished";
 
-  const counts = state.players.map((p) => p.locked.filter(Boolean).length);
+  const p0 = state.players[0];
+  const p1 = state.players[1];
+  const count0 = p0?.locked?.filter(Boolean).length ?? 0;
+  const count1 = p1?.locked?.filter(Boolean).length ?? 0;
 
-  if (counts[0] > counts[1]) {
-    state.winnerId = state.players[0].userId;
-    const profile = getProfile ? getProfile(state.players[0].userId) : null;
-    state.winnerName = profile?.username ?? state.players[0].userId;
+  if (p0 && (!p1 || count0 > count1)) {
+    state.winnerId = p0.userId;
+    const profile = getProfile ? getProfile(p0.userId) : null;
+    state.winnerName = profile?.username ?? p0.userId;
     state.isDraw = false;
-  } else if (counts[1] > counts[0]) {
-    state.winnerId = state.players[1].userId;
-    const profile = getProfile ? getProfile(state.players[1].userId) : null;
-    state.winnerName = profile?.username ?? state.players[1].userId;
+  } else if (p1 && count1 > count0) {
+    state.winnerId = p1.userId;
+    const profile = getProfile ? getProfile(p1.userId) : null;
+    state.winnerName = profile?.username ?? p1.userId;
     state.isDraw = false;
   } else {
     state.winnerId = null;

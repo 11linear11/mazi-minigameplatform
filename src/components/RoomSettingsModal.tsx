@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import { Camera, X } from "lucide-react";
 import { ROOM_ICONS } from "@/data/icons";
 
@@ -79,7 +80,7 @@ export default function RoomSettingsModal({
             className="flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-panel-deep transition-all duration-200 hover:ring-2 hover:ring-accent"
           >
             {avatarPreview ? (
-              <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+              <Image src={avatarPreview} alt="" width={64} height={64} unoptimized className="h-full w-full object-cover" />
             ) : (
               <Camera size={24} className="text-muted/60" />
             )}

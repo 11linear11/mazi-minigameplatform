@@ -1,3 +1,4 @@
+import Image from "next/image";
 import {
   Hash,
   Lock,
@@ -33,6 +34,7 @@ type RoomInfoPanelProps = {
   ownerId?: string | null;
   roomAvatar?: string | null;
   roomIcon?: string;
+  onOpenDM?: (userId: string, username: string, avatar: string) => void;
 };
 
 const privacyIcon: Record<string, React.ReactNode> = {
@@ -65,6 +67,7 @@ export default function RoomInfoPanel({
   ownerId,
   roomAvatar,
   roomIcon,
+  onOpenDM,
 }: RoomInfoPanelProps) {
   return (
     <aside className="flex h-full flex-col gap-0 overflow-hidden border-x border-outline bg-panel-deep p-5">
@@ -84,7 +87,7 @@ export default function RoomInfoPanel({
         <div className="mt-3 flex items-center gap-3">
           <div className="flex w-14 h-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-panel-highest text-xl ring-1 ring-outline">
             {roomAvatar ? (
-              <img src={roomAvatar} alt="" className="h-full w-full object-cover" />
+              <Image src={roomAvatar} alt="" width={56} height={56} unoptimized className="h-full w-full object-cover" />
             ) : (
               roomIcon
             )}
@@ -152,15 +155,23 @@ export default function RoomInfoPanel({
           <span className="text-[12px] text-muted/60">{members.length} نفر</span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {members.slice(0, 6).map((member) => (
-            <div key={member.id} className="relative w-10 h-10 shrink-0">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-panel-highest text-sm ring-1 ring-outline">
+          {members.slice(0, 8).map((member) => (
+            <button
+              key={member.id}
+              onClick={() => onOpenDM?.(member.id, member.name, member.avatar || "👤")}
+              className="relative w-10 h-10 shrink-0 group focus:outline-none"
+              title={`${member.name} — کلیک برای پیام خصوصی (PV)`}
+            >
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-panel-highest text-sm ring-1 ring-outline group-hover:ring-accent group-hover:scale-105 transition-all">
                 {member.avatar &&
                 (member.avatar.startsWith("/avatars/") ||
                   member.avatar.startsWith("http")) ? (
-                  <img
+                  <Image
                     src={member.avatar}
                     alt=""
+                    width={40}
+                    height={40}
+                    unoptimized
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -176,11 +187,11 @@ export default function RoomInfoPanel({
                       : "bg-panel-highest"
                 }`}
               />
-            </div>
+            </button>
           ))}
-          {members.length > 6 && (
+          {members.length > 8 && (
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-panel-highest text-[12px] text-muted ring-1 ring-outline">
-              +{members.length - 6}
+              +{members.length - 8}
             </div>
           )}
         </div>
@@ -201,7 +212,7 @@ export default function RoomInfoPanel({
               <div className="flex items-center gap-2.5">
                 <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-panel-highest text-sm ring-1 ring-outline">
                   {game.avatar ? (
-                    <img src={game.avatar} alt="" className="h-full w-full object-cover" />
+                    <Image src={game.avatar} alt="" width={32} height={32} unoptimized className="h-full w-full object-cover" />
                   ) : (
                     game.icon || "🎮"
                   )}
