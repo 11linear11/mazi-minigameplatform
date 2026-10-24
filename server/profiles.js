@@ -165,8 +165,8 @@ export function getLeaderboard(category = "overall", limit = 50) {
     const rows = db.prepare(`
       SELECT userId, username, avatar, status, xp, level, wins, badges, tags, favoriteGames
       FROM users
-      WHERE userId NOT LIKE 'test-user-%' AND (wins > 0 OR xp > 0)
-      ORDER BY wins DESC, xp DESC, level DESC
+      WHERE userId NOT LIKE 'test-user-%'
+      ORDER BY wins DESC, xp DESC, level DESC, createdAt ASC
       LIMIT ?
     `).all(safeLimit);
 
@@ -187,11 +187,11 @@ export function getLeaderboard(category = "overall", limit = 50) {
 
   // Filter by specific game
   const rows = db.prepare(`
-    SELECT u.userId, u.username, u.avatar, u.status, u.xp, u.level, u.wins as totalWins, uw.count as gameWins, u.badges, u.tags, u.favoriteGames
-    FROM user_wins uw
-    JOIN users u ON uw.userId = u.userId
-    WHERE LOWER(uw.gameType) = LOWER(?) AND uw.count > 0 AND u.userId NOT LIKE 'test-user-%'
-    ORDER BY uw.count DESC, u.xp DESC
+    SELECT u.userId, u.username, u.avatar, u.status, u.xp, u.level, u.wins as totalWins, COALESCE(uw.count, 0) as gameWins, u.badges, u.tags, u.favoriteGames
+    FROM users u
+    LEFT JOIN user_wins uw ON u.userId = uw.userId AND LOWER(uw.gameType) = LOWER(?)
+    WHERE u.userId NOT LIKE 'test-user-%'
+    ORDER BY gameWins DESC, u.wins DESC, u.xp DESC, u.level DESC, u.createdAt ASC
     LIMIT ?
   `).all(category, safeLimit);
 

@@ -221,6 +221,18 @@ app.get("/profile/:userId", (req, res) => {
   res.json({ profile: safeProfile });
 });
 
+app.post("/profile/sync", (req, res) => {
+  const { userId, username, avatar } = req.body || {};
+  if (!userId) {
+    res.status(400).json({ error: "MISSING_USER_ID" });
+    return;
+  }
+  const profile = ensureProfile({ userId, username, avatar });
+  const { passwordHash, ...safeProfile } = profile;
+  io.emit("leaderboard_updated");
+  res.json({ profile: safeProfile });
+});
+
 app.get("/rooms", (_req, res) => {
   res.json({ rooms: listRooms() });
 });
@@ -708,6 +720,7 @@ io.on("connection", (socket) => {
           winnerName,
         },
       });
+      io.emit("leaderboard_updated");
       const winnerChatMsg = winnerName
         ? {
             id: `sys-${Date.now()}`,
@@ -1109,13 +1122,13 @@ io.on("connection", (socket) => {
     else socket.emit("cinema_state", state);
   });
 
-  socket.on("cinema_set_source", ({ roomId, type, url, title, duration, hostOnly }, callback) => {
+  socket.on("cinema_set_source", ({ roomId, type, url, title, duration, hostOnly, autoPlay }, callback) => {
     if (!roomId) return;
     const userId = socket.data?.userId;
     const profile = userId ? getProfile(userId) : null;
     const state = setVideoSource(
       roomId,
-      { type, url, title, duration, hostOnly },
+      { type, url, title, duration, hostOnly, autoPlay: Boolean(autoPlay) },
       { userId, userName: profile?.username || "کاربر" }
     );
     io.to(roomId).emit("cinema_state", state);
@@ -1274,6 +1287,7 @@ function handlePlayerForfeit(sessionId, userId, gameType, io, sessions, gameStat
     winnerUserId = otherPlayer.userId;
     const winnerProfile = getProfile(otherPlayer.userId);
     winnerName = winnerProfile?.username ?? otherPlayer.userId;
+    io.emit("leaderboard_updated");
   }
 
   const forfeitedProfile = getProfile(userId);

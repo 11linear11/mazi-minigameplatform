@@ -246,187 +246,207 @@ export default function LeaderboardModal({
             </div>
           ) : (
             <>
-              {/* Top 3 Podium (Compact, Proportional, Centered) */}
-              <div className="grid grid-cols-3 gap-2 items-end pt-3 pb-1 max-w-sm mx-auto">
-                {/* #2 Rank (Silver) */}
-                <div className="flex flex-col items-center">
-                  {top2 ? (
+              {/* Top 3 Podium (Only when 3 or more players exist) */}
+              {leaderboard.length >= 3 && top1 && top2 && top3 && (
+                <div className="grid grid-cols-3 gap-2 items-end pt-4 pb-2 max-w-md mx-auto">
+                  {/* #2 Rank (Silver) - on the right in RTL */}
+                  <div className="flex flex-col items-center">
                     <div className="flex flex-col items-center w-full">
-                      <div className="relative mb-1">
-                        <div className="w-11 h-11 rounded-xl ring-2 ring-slate-300 shadow-md overflow-hidden bg-slate-800 flex items-center justify-center">
+                      <div className="relative mb-1.5">
+                        <div className="w-12 h-12 rounded-2xl ring-2 ring-slate-300 shadow-md overflow-hidden bg-slate-800 flex items-center justify-center">
                           {top2.avatar?.startsWith("/avatars/") || top2.avatar?.startsWith("http") ? (
-                            <Image src={top2.avatar} alt={top2.username} width={44} height={44} className="object-cover w-full h-full" unoptimized />
+                            <Image src={top2.avatar} alt={top2.username} width={48} height={48} className="object-cover w-full h-full" unoptimized />
                           ) : (
-                            <span className="text-xl">{top2.avatar || "👤"}</span>
+                            <span className="text-2xl">{top2.avatar || "👤"}</span>
                           )}
                         </div>
-                        <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-300 text-slate-900 font-bold text-[10px] shadow-sm ring-1 ring-panel-deep">
+                        <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-900 font-black text-[10px] shadow ring-1 ring-panel-deep">
                           ۲
                         </div>
                       </div>
-                      <span className="font-bold text-[11px] text-on-surface truncate max-w-[75px] text-center">
+                      <span className="font-extrabold text-xs text-on-surface truncate max-w-[100px] text-center" title={top2.username}>
                         {top2.username}
                       </span>
-                      <span className="text-[10px] text-amber-400 font-bold">
+                      <span className="text-[10px] text-slate-300 font-bold">
                         {top2.wins} برد
                       </span>
-                      <div className="w-full h-11 rounded-t-xl bg-gradient-to-t from-slate-800 to-slate-700/60 border-t border-slate-300/60 flex items-center justify-center mt-1">
-                        <Medal size={16} className="text-slate-300" />
+                      <div className="w-full h-12 rounded-t-2xl bg-gradient-to-t from-slate-800 via-slate-700/60 to-slate-600/40 border-t-2 border-slate-300 flex flex-col items-center justify-center mt-1.5 shadow-sm">
+                        <span className="text-[10px] font-black text-slate-200">🥈 رتبه ۲</span>
                       </div>
                     </div>
-                  ) : (
-                    <div className="w-full h-11 rounded-t-xl bg-slate-800/20" />
-                  )}
-                </div>
+                  </div>
 
-                {/* #1 Rank (Gold - The Leader) */}
-                <div className="flex flex-col items-center">
-                  {top1 && (
+                  {/* #1 Rank (Gold - The Leader) - Center */}
+                  <div className="flex flex-col items-center">
                     <div className="flex flex-col items-center w-full">
-                      <div className="relative mb-1">
-                        <Crown size={16} className="text-amber-400 absolute -top-4 left-1/2 -translate-x-1/2 drop-shadow-[0_0_6px_#fbbf24] animate-bounce" />
-                        <div className="w-14 h-14 rounded-xl ring-2 ring-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.5)] overflow-hidden bg-slate-800 flex items-center justify-center">
+                      <div className="relative mb-1.5">
+                        <Crown size={18} className="text-amber-400 absolute -top-5 left-1/2 -translate-x-1/2 drop-shadow-[0_0_8px_#fbbf24] animate-bounce" />
+                        <div className="w-16 h-16 rounded-2xl ring-2 ring-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.6)] overflow-hidden bg-slate-800 flex items-center justify-center">
                           {top1.avatar?.startsWith("/avatars/") || top1.avatar?.startsWith("http") ? (
-                            <Image src={top1.avatar} alt={top1.username} width={56} height={56} className="object-cover w-full h-full" unoptimized />
+                            <Image src={top1.avatar} alt={top1.username} width={64} height={64} className="object-cover w-full h-full" unoptimized />
                           ) : (
-                            <span className="text-2xl">{top1.avatar || "👑"}</span>
+                            <span className="text-3xl">{top1.avatar || "👑"}</span>
                           )}
                         </div>
-                        <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow-sm ring-1 ring-panel-deep">
+                        <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-[10px] shadow ring-1 ring-panel-deep">
                           ۱
                         </div>
                       </div>
-                      <span className="font-black text-xs text-amber-300 truncate max-w-[85px] text-center">
+                      <span className="font-black text-xs text-amber-300 truncate max-w-[110px] text-center" title={top1.username}>
                         {top1.username}
                       </span>
                       <span className="text-[11px] text-amber-400 font-black">
                         {top1.wins} برد 👑
                       </span>
-                      <div className="w-full h-15 rounded-t-xl bg-gradient-to-t from-amber-950/80 via-amber-900/60 to-amber-700/60 border-t border-amber-400 flex items-center justify-center mt-1 shadow-md">
-                        <Trophy size={18} className="text-amber-400 drop-shadow-[0_0_6px_#fbbf24]" />
+                      <div className="w-full h-16 rounded-t-2xl bg-gradient-to-t from-amber-950/90 via-amber-900/70 to-amber-600/50 border-t-2 border-amber-400 flex flex-col items-center justify-center mt-1.5 shadow-lg">
+                        <span className="text-[11px] font-black text-amber-300">🥇 رتبه ۱</span>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* #3 Rank (Bronze) */}
-                <div className="flex flex-col items-center">
-                  {top3 ? (
+                  {/* #3 Rank (Bronze) - Left in RTL */}
+                  <div className="flex flex-col items-center">
                     <div className="flex flex-col items-center w-full">
-                      <div className="relative mb-1">
-                        <div className="w-11 h-11 rounded-xl ring-2 ring-amber-700 shadow-md overflow-hidden bg-slate-800 flex items-center justify-center">
+                      <div className="relative mb-1.5">
+                        <div className="w-12 h-12 rounded-2xl ring-2 ring-amber-700 shadow-md overflow-hidden bg-slate-800 flex items-center justify-center">
                           {top3.avatar?.startsWith("/avatars/") || top3.avatar?.startsWith("http") ? (
-                            <Image src={top3.avatar} alt={top3.username} width={44} height={44} className="object-cover w-full h-full" unoptimized />
+                            <Image src={top3.avatar} alt={top3.username} width={48} height={48} className="object-cover w-full h-full" unoptimized />
                           ) : (
-                            <span className="text-xl">{top3.avatar || "👤"}</span>
+                            <span className="text-2xl">{top3.avatar || "👤"}</span>
                           )}
                         </div>
-                        <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-700 text-white font-bold text-[10px] shadow-sm ring-1 ring-panel-deep">
+                        <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-700 text-white font-black text-[10px] shadow ring-1 ring-panel-deep">
                           ۳
                         </div>
                       </div>
-                      <span className="font-bold text-[11px] text-on-surface truncate max-w-[75px] text-center">
+                      <span className="font-extrabold text-xs text-on-surface truncate max-w-[100px] text-center" title={top3.username}>
                         {top3.username}
                       </span>
-                      <span className="text-[10px] text-amber-600 font-bold">
+                      <span className="text-[10px] text-amber-500 font-bold">
                         {top3.wins} برد
                       </span>
-                      <div className="w-full h-9 rounded-t-xl bg-gradient-to-t from-amber-950/50 to-amber-900/30 border-t border-amber-700/50 flex items-center justify-center mt-1">
-                        <Medal size={15} className="text-amber-700" />
+                      <div className="w-full h-10 rounded-t-2xl bg-gradient-to-t from-amber-950/60 via-amber-900/40 to-amber-800/30 border-t-2 border-amber-700/60 flex flex-col items-center justify-center mt-1.5 shadow-sm">
+                        <span className="text-[10px] font-black text-amber-500">🥉 رتبه ۳</span>
                       </div>
                     </div>
-                  ) : (
-                    <div className="w-full h-9 rounded-t-xl bg-slate-800/20" />
-                  )}
-                </div>
-              </div>
-
-              {/* Ranks 4 and beyond */}
-              {remainingPlayers.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[11px] font-bold text-muted block px-1">سایر رتبه‌ها:</span>
-                  <div className="space-y-1">
-                    {remainingPlayers.map((u) => {
-                      const isMe = u.userId === currentUserId;
-                      return (
-                        <div
-                          key={u.userId}
-                          className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
-                            isMe
-                              ? "bg-accent/15 border-accent shadow-sm ring-1 ring-accent/30"
-                              : "bg-panel-soft/60 border-outline hover:bg-panel-soft"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <span className="w-6 text-center font-mono font-bold text-xs text-muted">
-                              #{u.rank}
-                            </span>
-
-                            <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-panel-deep border border-outline flex items-center justify-center shrink-0">
-                              {u.avatar?.startsWith("/avatars/") || u.avatar?.startsWith("http") ? (
-                                <Image src={u.avatar} alt={u.username} width={32} height={32} className="object-cover w-full h-full" unoptimized />
-                              ) : (
-                                <span className="text-sm">{u.avatar || "👤"}</span>
-                              )}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-on-surface truncate">
-                                  {u.username}
-                                </span>
-                                {isMe && (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-accent text-panel-deep">
-                                    شما
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-muted block leading-tight">
-                                Level {u.level} • XP {u.xp}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0 pl-1">
-                            <span className="text-xs font-bold text-amber-400 font-mono">
-                              {u.wins}
-                            </span>
-                            <span className="text-[10px] text-muted">برد</span>
-                          </div>
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
               )}
+
+              {/* Complete Ranking List of All Players */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs font-bold text-slate-300">رتبه‌بندی کامل بازیکنان ({leaderboard.length} نفر):</span>
+                  <span className="text-[11px] font-bold text-muted">ترتیب بر اساس برد و امتیاز</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {leaderboard.map((u) => {
+                    const isMe = u.userId === currentUserId;
+                    const isTop1 = u.rank === 1;
+                    const isTop2 = u.rank === 2;
+                    const isTop3 = u.rank === 3;
+
+                    return (
+                      <div
+                        key={u.userId}
+                        className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
+                          isMe
+                            ? "bg-accent/15 border-accent shadow-md ring-1 ring-accent/40"
+                            : isTop1
+                            ? "bg-amber-500/10 border-amber-400/40 hover:bg-amber-500/15"
+                            : "bg-panel-soft/60 border-outline hover:bg-panel-soft"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {/* Rank Badge */}
+                          <div
+                            className={`flex h-7 w-7 items-center justify-center rounded-xl font-black text-xs shrink-0 shadow-sm ${
+                              isTop1
+                                ? "bg-amber-400 text-slate-950 ring-2 ring-amber-300"
+                                : isTop2
+                                ? "bg-slate-300 text-slate-900 ring-2 ring-slate-200"
+                                : isTop3
+                                ? "bg-amber-700 text-white ring-2 ring-amber-600"
+                                : "bg-panel border border-outline text-muted font-mono"
+                            }`}
+                          >
+                            #{u.rank}
+                          </div>
+
+                          {/* Avatar */}
+                          <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-panel-deep border border-outline flex items-center justify-center shrink-0">
+                            {u.avatar?.startsWith("/avatars/") || u.avatar?.startsWith("http") ? (
+                              <Image src={u.avatar} alt={u.username} width={36} height={36} className="object-cover w-full h-full" unoptimized />
+                            ) : (
+                              <span className="text-base">{u.avatar || "👤"}</span>
+                            )}
+                          </div>
+
+                          {/* User info */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-xs text-on-surface truncate">
+                                {u.username}
+                              </span>
+                              {isTop1 && <span>👑</span>}
+                              {isMe && (
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-accent text-panel-deep">
+                                  شما
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-muted block leading-tight">
+                              سطح {u.level} • {u.xp} XP
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Wins count */}
+                        <div className="flex items-center gap-1.5 shrink-0 pl-1">
+                          <span className={`text-sm font-black font-mono ${u.wins > 0 ? "text-amber-400" : "text-muted"}`}>
+                            {u.wins}
+                          </span>
+                          <span className="text-[11px] text-muted font-bold">برد</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </>
           )}
         </div>
 
-        {/* 4. Current User Sticky Footer (shrink-0) */}
-        {myEntry && (
+        {/* 4. Current User Sticky Footer */}
+        {myEntry ? (
           <div className="px-4 py-2.5 border-t border-outline bg-panel/95 flex items-center justify-between backdrop-blur-md shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent/20 text-accent font-bold text-xs border border-accent/30">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-accent text-panel-deep font-black text-xs shadow">
                 #{myEntry.rank}
               </span>
               <div>
-                <span className="text-[11px] font-bold text-on-surface block leading-tight">جایگاه شما در این بخش</span>
+                <span className="text-xs font-bold text-on-surface block leading-tight">جایگاه شما در رتبه‌بندی</span>
                 <span className="text-[10px] text-muted leading-tight">
-                  {myEntry.wins} برد ثبت شده
+                  {myEntry.wins} برد ثبت شده • سطح {myEntry.level}
                 </span>
               </div>
             </div>
 
             <div>
-              <span className="text-xs font-bold text-accent">
+              <span className="text-xs font-black text-accent">
                 {myEntry.rank === 1
-                  ? "🥇 صدرنشین جدول!"
+                  ? "🥇 صدرنشین و قهرمان جدول!"
                   : myEntry.rank <= 3
-                  ? "🎉 در جمع ۳ برتر!"
+                  ? `🎉 سکوی برتر (رتبه #${myEntry.rank})`
                   : `رتبه #${myEntry.rank}`}
               </span>
             </div>
+          </div>
+        ) : (
+          <div className="px-4 py-2 border-t border-outline bg-panel/80 flex items-center justify-between shrink-0 text-xs text-muted">
+            <span>در حال محاسبه رتبه شما...</span>
+            <span className="font-bold text-accent">با انجام بازی، امتیاز کسب کنید!</span>
           </div>
         )}
       </div>
