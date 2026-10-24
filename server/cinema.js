@@ -46,7 +46,7 @@ export function getVideoState(roomId) {
   };
 }
 
-export function setVideoSource(roomId, { type, url, title, duration = 0, hostOnly = false }, user = {}) {
+export function setVideoSource(roomId, { type, url, title, duration = 0, hostOnly = false, autoPlay = false }, user = {}) {
   const current = cinemaRooms.get(roomId) || defaultState(roomId);
 
   // If hostOnly is enabled and user is not owner/admin (checked upstream or by flag)
@@ -57,7 +57,7 @@ export function setVideoSource(roomId, { type, url, title, duration = 0, hostOnl
     url: url || "",
     title: title || (type === "local" ? "فایل محلی سیستم" : "ویدیو استریم"),
     duration: typeof duration === "number" ? duration : 0,
-    status: "paused",
+    status: autoPlay ? "playing" : "paused",
     currentTime: 0,
     updatedAt: Date.now(),
     hostOnly: Boolean(hostOnly),

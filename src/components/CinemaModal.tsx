@@ -58,12 +58,16 @@ interface CinemaModalProps {
   socket: any;
 }
 
-// Extract 11-char YouTube Video ID from any URL format
+// Extract 11-char YouTube Video ID from any URL format or direct ID
 export function extractYouTubeId(url: string): string | null {
   if (!url) return null;
+  const trimmed = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
   const regExp =
-    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?\/\s]{11})/;
-  const match = url.match(regExp);
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|live|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+  const match = trimmed.match(regExp);
   return match ? match[1] : null;
 }
 
@@ -87,6 +91,10 @@ function formatTime(seconds: number): string {
 }
 
 const PRESET_DEMO_YOUTUBE = [
+  {
+    title: "این خرید احمقانه برای کیه؟ (ویدیوی شما)",
+    url: "https://www.youtube.com/watch?v=3J5g3oSJAQ0",
+  },
   {
     title: "Big Buck Bunny (انیمیشن یوتیوب)",
     url: "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
@@ -138,12 +146,21 @@ export default function CinemaModal({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const ytPlayerRef = useRef<any>(null);
+  const currentVideoIdRef = useRef<string | null>(null);
+  const ytMountContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isSeekingRef = useRef<boolean>(false);
   const isProgrammaticYtActionRef = useRef<boolean>(false);
 
+  // Sync refs to avoid stale closures in event listeners without re-subscribing
+  const cinemaStateRef = useRef<CinemaState | null>(null);
+  cinemaStateRef.current = cinemaState;
+
   // Permission check
   const canControl = !cinemaState?.hostOnly || isRoomOwner;
+
+  const canControlRef = useRef<boolean>(canControl);
+  canControlRef.current = canControl;
 
   // Load YouTube IFrame API Script once
   useEffect(() => {
@@ -156,7 +173,7 @@ export default function CinemaModal({
     }
   }, []);
 
-  // Cleanup blob URLs on unmount
+  // Cleanup blob URLs and player on unmount
   useEffect(() => {
     return () => {
       if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
@@ -166,9 +183,26 @@ export default function CinemaModal({
           ytPlayerRef.current.destroy();
         } catch (_) {}
         ytPlayerRef.current = null;
+        currentVideoIdRef.current = null;
       }
     };
   }, [localVideoUrl, subtitleUrl]);
+
+  // Clean up player when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      if (ytPlayerRef.current) {
+        try {
+          ytPlayerRef.current.destroy();
+        } catch (_) {}
+        ytPlayerRef.current = null;
+        currentVideoIdRef.current = null;
+      }
+      if (ytMountContainerRef.current) {
+        ytMountContainerRef.current.innerHTML = "";
+      }
+    }
+  }, [isOpen]);
 
   // Handle local video selection
   const handleSelectLocalVideo = (file: File) => {
@@ -214,18 +248,52 @@ export default function CinemaModal({
   // Initialize YouTube player when state is 'youtube'
   const initYouTubePlayer = useCallback(
     (videoId: string) => {
-      const checkYT = () => {
-        if ((window as any).YT && (window as any).YT.Player) {
-          const mountEl = document.getElementById("yt-cinema-iframe-mount");
-          if (!mountEl) return;
+      if (!videoId) return;
 
-          if (ytPlayerRef.current) {
-            try {
-              ytPlayerRef.current.destroy();
-            } catch (_) {}
+      // If player already exists and loaded:
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === "function") {
+        if (currentVideoIdRef.current !== videoId) {
+          currentVideoIdRef.current = videoId;
+          isProgrammaticYtActionRef.current = true;
+          try {
+            ytPlayerRef.current.loadVideoById(videoId, 0);
+            if (cinemaStateRef.current?.status === "playing") {
+              ytPlayerRef.current.playVideo();
+            } else {
+              ytPlayerRef.current.pauseVideo();
+            }
+          } catch (e) {
+            console.error("Error switching video:", e);
           }
+          setTimeout(() => {
+            isProgrammaticYtActionRef.current = false;
+          }, 800);
+        }
+        return;
+      }
 
-          ytPlayerRef.current = new (window as any).YT.Player("yt-cinema-iframe-mount", {
+      let attempts = 0;
+      const checkAndMount = () => {
+        attempts++;
+        if (typeof window === "undefined") return;
+
+        const container = ytMountContainerRef.current;
+        const ytReady = (window as any).YT && (window as any).YT.Player;
+
+        if (!ytReady || !container) {
+          if (attempts < 60) {
+            setTimeout(checkAndMount, 100);
+          }
+          return;
+        }
+
+        if (ytPlayerRef.current) return;
+
+        currentVideoIdRef.current = videoId;
+        container.innerHTML = '<div id="yt-player-target" style="width:100%;height:100%;"></div>';
+
+        try {
+          ytPlayerRef.current = new (window as any).YT.Player("yt-player-target", {
             videoId,
             playerVars: {
               autoplay: 1,
@@ -233,45 +301,68 @@ export default function CinemaModal({
               enablejsapi: 1,
               rel: 0,
               modestbranding: 1,
+              playsinline: 1,
               origin: window.location.origin,
             },
             events: {
               onReady: (event: any) => {
                 setDuration(event.target.getDuration() || 0);
-                if (cinemaState?.status === "playing") {
-                  const targetTime = cinemaState.calculatedCurrentTime ?? cinemaState.currentTime;
-                  isProgrammaticYtActionRef.current = true;
-                  event.target.seekTo(targetTime, true);
+                const curState = cinemaStateRef.current;
+                isProgrammaticYtActionRef.current = true;
+                if (curState?.status === "playing") {
+                  const targetTime = curState.calculatedCurrentTime ?? curState.currentTime ?? 0;
+                  if (targetTime > 1) {
+                    event.target.seekTo(targetTime, true);
+                  }
                   event.target.playVideo();
-                  setTimeout(() => {
-                    isProgrammaticYtActionRef.current = false;
-                  }, 800);
                 }
+                setTimeout(() => {
+                  isProgrammaticYtActionRef.current = false;
+                }, 800);
               },
               onStateChange: (event: any) => {
-                // Ignore if triggered by socket command
                 if (isProgrammaticYtActionRef.current) return;
 
                 const ytState = event.data;
-                const curTime = event.target.getCurrentTime();
+                const curTime = event.target.getCurrentTime?.() || 0;
+                const curState = cinemaStateRef.current;
+                const canCtrl = canControlRef.current;
 
-                // 1 = playing, 2 = paused
-                if (ytState === 1 && canControl) {
-                  socket?.emit("cinema_play", { roomId, currentTime: curTime });
-                } else if (ytState === 2 && canControl) {
-                  socket?.emit("cinema_pause", { roomId, currentTime: curTime });
+                // 1 = PLAYING
+                if (ytState === 1 && canCtrl) {
+                  if (curState?.status !== "playing") {
+                    socket?.emit("cinema_play", { roomId, currentTime: curTime });
+                  }
                 }
+                // 2 = PAUSED
+                else if (ytState === 2 && canCtrl) {
+                  if (curState?.status !== "paused") {
+                    socket?.emit("cinema_pause", { roomId, currentTime: curTime });
+                  }
+                }
+              },
+              onError: (event: any) => {
+                console.warn("YouTube Player error:", event.data);
+                const code = event.data;
+                let msg = "خطا در بارگذاری ویدیوی یوتیوب";
+                if (code === 101 || code === 150) {
+                  msg = "این ویدیو اجازه پخش درون سایتی (Embed) را به سایت‌های دیگر نمی‌دهد.";
+                } else if (code === 100 || code === 2) {
+                  msg = "شناسه ویدیو نامعتبر است یا ویدیو خصوصی/حذف شده است.";
+                }
+                setLastActionNotice(`⚠️ ${msg}`);
+                setTimeout(() => setLastActionNotice(null), 5000);
               },
             },
           });
-        } else {
-          setTimeout(checkYT, 200);
+        } catch (err) {
+          console.error("Failed to initialize YT.Player:", err);
         }
       };
 
-      checkYT();
+      checkAndMount();
     },
-    [cinemaState, canControl, roomId, socket]
+    [roomId, socket]
   );
 
   // Sync state listener
@@ -293,25 +384,27 @@ export default function CinemaModal({
       const targetTime = state.calculatedCurrentTime ?? state.currentTime;
 
       // Handle YouTube Player sync
-      if (state.type === "youtube" && ytPlayerRef.current && ytPlayerRef.current.getPlayerState) {
+      if (state.type === "youtube" && ytPlayerRef.current && typeof ytPlayerRef.current.getPlayerState === "function") {
         isProgrammaticYtActionRef.current = true;
         try {
-          const curTime = ytPlayerRef.current.getCurrentTime() || 0;
+          const curTime = ytPlayerRef.current.getCurrentTime?.() || 0;
           const drift = Math.abs(curTime - targetTime);
 
           if (state.status === "playing") {
-            if (drift > 1.5) {
+            if (drift > 2.0) {
               ytPlayerRef.current.seekTo(targetTime, true);
             }
-            if (ytPlayerRef.current.getPlayerState() !== 1) {
+            const pState = ytPlayerRef.current.getPlayerState?.();
+            if (pState !== 1 && pState !== 3) {
               ytPlayerRef.current.playVideo();
             }
             setSyncStatus("synced");
           } else if (state.status === "paused") {
-            if (drift > 0.8) {
+            if (drift > 1.0) {
               ytPlayerRef.current.seekTo(state.currentTime, true);
             }
-            if (ytPlayerRef.current.getPlayerState() !== 2) {
+            const pState = ytPlayerRef.current.getPlayerState?.();
+            if (pState === 1 || pState === 3) {
               ytPlayerRef.current.pauseVideo();
             }
             setSyncStatus("synced");
@@ -319,7 +412,7 @@ export default function CinemaModal({
         } catch (_) {}
         setTimeout(() => {
           isProgrammaticYtActionRef.current = false;
-        }, 600);
+        }, 800);
         return;
       }
 
@@ -374,17 +467,20 @@ export default function CinemaModal({
     if (!isOpen || !cinemaState || cinemaState.status !== "playing") return;
 
     const interval = setInterval(() => {
-      if (cinemaState.type === "youtube" && ytPlayerRef.current) {
+      const curState = cinemaStateRef.current;
+      if (!curState || curState.status !== "playing") return;
+
+      if (curState.type === "youtube" && ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === "function") {
         try {
           const curTime = ytPlayerRef.current.getCurrentTime() || 0;
-          const elapsed = (Date.now() - cinemaState.updatedAt) / 1000;
-          const target = cinemaState.currentTime + elapsed * (cinemaState.playbackRate || 1);
-          if (Math.abs(curTime - target) > 2) {
+          const elapsed = (Date.now() - curState.updatedAt) / 1000;
+          const target = curState.currentTime + elapsed * (curState.playbackRate || 1);
+          if (Math.abs(curTime - target) > 3.0) {
             isProgrammaticYtActionRef.current = true;
             ytPlayerRef.current.seekTo(target, true);
             setTimeout(() => {
               isProgrammaticYtActionRef.current = false;
-            }, 600);
+            }, 800);
           }
         } catch (_) {}
         return;
@@ -393,8 +489,8 @@ export default function CinemaModal({
       const video = videoRef.current;
       if (!video || video.paused || isSeekingRef.current) return;
 
-      const elapsed = (Date.now() - cinemaState.updatedAt) / 1000;
-      const targetTime = cinemaState.currentTime + elapsed * (cinemaState.playbackRate || 1);
+      const elapsed = (Date.now() - curState.updatedAt) / 1000;
+      const targetTime = curState.currentTime + elapsed * (curState.playbackRate || 1);
       const drift = Math.abs(video.currentTime - targetTime);
 
       if (drift > 1.8) {
@@ -417,8 +513,18 @@ export default function CinemaModal({
         const cur = ytPlayerRef.current.getCurrentTime() || 0;
         sounds.playPop();
         if (cinemaState.status === "playing") {
+          isProgrammaticYtActionRef.current = true;
+          ytPlayerRef.current.pauseVideo();
+          setTimeout(() => {
+            isProgrammaticYtActionRef.current = false;
+          }, 800);
           socket?.emit("cinema_pause", { roomId, currentTime: cur });
         } else {
+          isProgrammaticYtActionRef.current = true;
+          ytPlayerRef.current.playVideo();
+          setTimeout(() => {
+            isProgrammaticYtActionRef.current = false;
+          }, 800);
           socket?.emit("cinema_play", { roomId, currentTime: cur });
         }
       } catch (_) {}
@@ -449,7 +555,7 @@ export default function CinemaModal({
         ytPlayerRef.current.seekTo(newTime, true);
         setTimeout(() => {
           isProgrammaticYtActionRef.current = false;
-        }, 600);
+        }, 800);
       } catch (_) {}
     } else if (videoRef.current) {
       videoRef.current.currentTime = newTime;
@@ -473,16 +579,22 @@ export default function CinemaModal({
         title: titleToSet.trim() || "ویدیو یوتیوب",
         duration: 0,
         hostOnly: cinemaState?.hostOnly ?? false,
+        autoPlay: true,
       });
+      setInputUrl("");
+      setInputTitle("");
     } else {
       socket?.emit("cinema_set_source", {
         roomId,
         type: "url",
         url: urlToSet.trim(),
-        title: titleToSet.trim() || "ویدیو اینترنتی",
+        title: titleToSet.trim() || "ویدیو استریم",
         duration: 0,
         hostOnly: cinemaState?.hostOnly ?? false,
+        autoPlay: true,
       });
+      setInputUrl("");
+      setInputTitle("");
     }
   };
 
@@ -604,8 +716,8 @@ export default function CinemaModal({
             <div className="relative flex-1 w-full h-full flex flex-col justify-center items-center bg-black group">
               {/* YouTube IFrame Player */}
               {cinemaState?.type === "youtube" ? (
-                <div className="w-full h-full relative">
-                  <div id="yt-cinema-iframe-mount" className="w-full h-full" />
+                <div className="w-full h-full relative flex items-center justify-center bg-black">
+                  <div ref={ytMountContainerRef} className="w-full h-full" />
                 </div>
               ) : (
                 /* Native HTML5 Video Player */
@@ -790,6 +902,16 @@ export default function CinemaModal({
                         type="button"
                         onClick={() => {
                           sounds.playPop();
+                          if (ytPlayerRef.current) {
+                            try {
+                              ytPlayerRef.current.destroy();
+                            } catch (_) {}
+                            ytPlayerRef.current = null;
+                            currentVideoIdRef.current = null;
+                          }
+                          if (ytMountContainerRef.current) {
+                            ytMountContainerRef.current.innerHTML = "";
+                          }
                           socket?.emit("cinema_set_source", {
                             roomId,
                             type: "none",
@@ -923,42 +1045,61 @@ export default function CinemaModal({
               {/* Tab 1: YouTube */}
               {activeTab === "youtube" && (
                 <div className="space-y-4 animate-fade-in">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300 block text-right">
-                      لینک ویدیوی یوتیوب (یا آیدی ویدیو):
-                    </label>
-                    <input
-                      type="url"
-                      dir="ltr"
-                      placeholder="https://www.youtube.com/watch?v=... یا https://youtu.be/..."
-                      value={inputUrl}
-                      onChange={(e) => setInputUrl(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300 block text-right">
-                      عنوان ویدیو (اختیاری):
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثلاً: موزیک ویدیو جدید یا فیلم تستی"
-                      value={inputTitle}
-                      onChange={(e) => setInputTitle(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSetUrlSource(inputUrl, inputTitle)}
-                    disabled={!inputUrl.trim()}
-                    className="w-full py-2.5 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-black text-xs shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSetUrlSource(inputUrl, inputTitle);
+                    }}
+                    className="space-y-4"
                   >
-                    <YouTubeIcon size={16} />
-                    <span>شروع پخش همزمان یوتیوب در روم</span>
-                  </button>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-300 block text-right">
+                        لینک ویدیوی یوتیوب (یا شناسه ۱۱ رقمی ویدیو):
+                      </label>
+                      <input
+                        type="text"
+                        dir="ltr"
+                        placeholder="https://www.youtube.com/watch?v=... یا https://youtu.be/... یا 3J5g3oSJAQ0"
+                        value={inputUrl}
+                        onChange={(e) => setInputUrl(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSetUrlSource(inputUrl, inputTitle);
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-300 block text-right">
+                        عنوان ویدیو (اختیاری):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً: موزیک ویدیو جدید یا فیلم تستی"
+                        value={inputTitle}
+                        onChange={(e) => setInputTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSetUrlSource(inputUrl, inputTitle);
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={!inputUrl.trim()}
+                      className="w-full py-2.5 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-black text-xs shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <YouTubeIcon size={16} />
+                      <span>شروع پخش همزمان یوتیوب در روم</span>
+                    </button>
+                  </form>
 
                   {/* Preset YouTube Demos */}
                   <div className="pt-2 border-t border-outline/50 space-y-1.5">
