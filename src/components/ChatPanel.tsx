@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Smile, Banana, Gamepad2, Users, Hash, X } from "lucide-react";
+import { Smile, Banana, Gamepad2, Users, Hash, X, Film } from "lucide-react";
 import EmojiPicker, { type EmojiClickData, Theme as EmojiTheme, EmojiStyle } from "emoji-picker-react";
 import type { Message } from "@/data/mock";
 
@@ -11,6 +11,7 @@ type ChatPanelProps = {
   onSend: (content: string) => void;
   onJoinGame: (sessionId?: string) => void;
   onOpenGame: () => void;
+  onOpenCinema?: () => void;
   activeSessionId?: string | null;
   userInActiveGame: boolean;
   roomName: string;
@@ -24,6 +25,7 @@ export default function ChatPanel({
   onSend,
   onJoinGame,
   onOpenGame,
+  onOpenCinema,
   activeSessionId,
   roomName,
   roomTopic,
@@ -85,6 +87,18 @@ export default function ChatPanel({
           </div>
           <div className="rounded-md border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">REALTIME</div>
         </div>
+
+        {onOpenCinema && (
+          <button
+            type="button"
+            onClick={onOpenCinema}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-400/30 text-xs font-bold transition-all shadow-sm hover:scale-105 active:scale-95"
+            title="سینما روم (تماشای همزمان فیلم)"
+          >
+            <Film size={15} className="text-purple-400" />
+            <span>سینما روم 🎬</span>
+          </button>
+        )}
       </header>
 
       <div ref={scrollRef} className="scrollbar-hidden flex-1 min-h-0 space-y-6 overflow-y-auto p-4 lg:p-8" dir="ltr">

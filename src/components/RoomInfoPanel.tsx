@@ -7,6 +7,7 @@ import {
   Gamepad2,
   Copy,
   Settings,
+  Film,
 } from "lucide-react";
 import type { Game, Member } from "@/data/mock";
 
@@ -35,6 +36,7 @@ type RoomInfoPanelProps = {
   roomAvatar?: string | null;
   roomIcon?: string;
   onOpenDM?: (userId: string, username: string, avatar: string) => void;
+  onOpenCinema?: () => void;
 };
 
 const privacyIcon: Record<string, React.ReactNode> = {
@@ -68,6 +70,7 @@ export default function RoomInfoPanel({
   roomAvatar,
   roomIcon,
   onOpenDM,
+  onOpenCinema,
 }: RoomInfoPanelProps) {
   return (
     <aside className="flex h-full flex-col gap-0 overflow-hidden border-x border-outline bg-panel-deep p-5">
@@ -147,6 +150,30 @@ export default function RoomInfoPanel({
           </div>
         </div>
       </div>
+
+      {/* Cinema / Watch Together Banner */}
+      {onOpenCinema && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onOpenCinema}
+            className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-purple-950/60 via-purple-900/30 to-panel-soft border border-purple-500/30 hover:border-purple-400/60 transition-all group shadow-md text-right active:scale-95"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 group-hover:scale-105 transition-transform">
+                <Film size={18} />
+              </div>
+              <div>
+                <p className="text-xs font-extrabold text-on-surface">سینما روم</p>
+                <p className="text-[10px] text-muted">تماشای همزمان فیلم با دوستان</p>
+              </div>
+            </div>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-400/30 group-hover:bg-purple-500/30 transition-colors">
+              ورود 🎬
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* Online */}
       <div className="mt-6 border-t border-outline pt-6">

@@ -57,6 +57,10 @@ const nextConfig = {
         source: "/leaderboard",
         destination: `${apiInternal}/leaderboard`,
       },
+      {
+        source: "/cinema/:path*",
+        destination: `${apiInternal}/cinema/:path*`,
+      },
     ];
   },
 };

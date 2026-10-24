@@ -64,6 +64,14 @@ import {
   getTotalUnreadDirectMessagesCount,
   updateInviteStatus,
 } from "./directMessages.js";
+import {
+  getVideoState,
+  setVideoSource,
+  playVideo,
+  pauseVideo,
+  seekVideo,
+  updateVideoConfig,
+} from "./cinema.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -195,8 +203,13 @@ function buildRoomPayload(roomId) {
   const memberProfiles = (snapshot.members ?? []).map((memberId) =>
     getProfile(memberId) ?? { userId: memberId, username: memberId, avatar: "👤" }
   );
-  return { ...snapshot, memberProfiles };
+  const cinema = getVideoState(roomId);
+  return { ...snapshot, memberProfiles, cinema };
 }
+
+app.get("/cinema/:roomId", (req, res) => {
+  res.json({ cinema: getVideoState(req.params.roomId) });
+});
 
 app.get("/profile/:userId", (req, res) => {
   const profile = getProfile(req.params.userId);
@@ -1086,6 +1099,79 @@ io.on("connection", (socket) => {
     const leaderboard = getLeaderboard(category, limit);
     if (typeof callback === "function") callback({ leaderboard });
     else socket.emit("leaderboard_data", { leaderboard });
+  });
+
+  // Cinema / Watch Together Socket Handlers
+  socket.on("cinema_get_state", ({ roomId }, callback) => {
+    if (!roomId) return;
+    const state = getVideoState(roomId);
+    if (typeof callback === "function") callback({ state });
+    else socket.emit("cinema_state", state);
+  });
+
+  socket.on("cinema_set_source", ({ roomId, type, url, title, duration, hostOnly }, callback) => {
+    if (!roomId) return;
+    const userId = socket.data?.userId;
+    const profile = userId ? getProfile(userId) : null;
+    const state = setVideoSource(
+      roomId,
+      { type, url, title, duration, hostOnly },
+      { userId, userName: profile?.username || "کاربر" }
+    );
+    io.to(roomId).emit("cinema_state", state);
+    if (typeof callback === "function") callback({ state });
+  });
+
+  socket.on("cinema_play", ({ roomId, currentTime }, callback) => {
+    if (!roomId) return;
+    const userId = socket.data?.userId;
+    const profile = userId ? getProfile(userId) : null;
+    const state = playVideo(
+      roomId,
+      { currentTime },
+      { userId, userName: profile?.username || "کاربر" }
+    );
+    io.to(roomId).emit("cinema_state", state);
+    if (typeof callback === "function") callback({ state });
+  });
+
+  socket.on("cinema_pause", ({ roomId, currentTime }, callback) => {
+    if (!roomId) return;
+    const userId = socket.data?.userId;
+    const profile = userId ? getProfile(userId) : null;
+    const state = pauseVideo(
+      roomId,
+      { currentTime },
+      { userId, userName: profile?.username || "کاربر" }
+    );
+    io.to(roomId).emit("cinema_state", state);
+    if (typeof callback === "function") callback({ state });
+  });
+
+  socket.on("cinema_seek", ({ roomId, currentTime }, callback) => {
+    if (!roomId) return;
+    const userId = socket.data?.userId;
+    const profile = userId ? getProfile(userId) : null;
+    const state = seekVideo(
+      roomId,
+      { currentTime },
+      { userId, userName: profile?.username || "کاربر" }
+    );
+    io.to(roomId).emit("cinema_state", state);
+    if (typeof callback === "function") callback({ state });
+  });
+
+  socket.on("cinema_config", ({ roomId, hostOnly }, callback) => {
+    if (!roomId) return;
+    const userId = socket.data?.userId;
+    const profile = userId ? getProfile(userId) : null;
+    const state = updateVideoConfig(
+      roomId,
+      { hostOnly },
+      { userId, userName: profile?.username || "کاربر" }
+    );
+    io.to(roomId).emit("cinema_state", state);
+    if (typeof callback === "function") callback({ state });
   });
 
   socket.on("dm:respond_invite", ({ messageId, status }) => {

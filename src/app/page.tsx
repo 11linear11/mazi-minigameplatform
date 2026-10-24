@@ -14,8 +14,9 @@ import RoomList from "@/components/RoomList";
 import LoadingScreen from "@/components/LoadingScreen";
 import DirectChatPanel from "@/components/DirectChatPanel";
 import LeaderboardModal from "@/components/LeaderboardModal";
+import CinemaModal from "@/components/CinemaModal";
 import type { DMConversation } from "@/components/DirectMessagesDrawer";
-import { Hash, Menu, Banana, Users, MessageSquare, Trophy } from "lucide-react";
+import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film } from "lucide-react";
 import { getSocket } from "@/lib/socket";
 import { sounds } from "@/lib/sounds";
 
@@ -49,6 +50,7 @@ export default function HomePage() {
   const [dmConversations, setDmConversations] = useState<DMConversation[]>([]);
   const [unreadDMCount, setUnreadDMCount] = useState(0);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showCinemaModal, setShowCinemaModal] = useState(false);
   const loadingStartRef = useRef(Date.now());
   const loadingDoneRef = useRef(false);
   const handleLoadingComplete = useCallback(() => {
@@ -771,6 +773,15 @@ export default function HomePage() {
           <p className="text-[15px] font-bold text-accent">MazI</p>
         )}
         <div className="flex items-center gap-1.5">
+          {selectedRoomId && (
+            <button
+              onClick={() => setShowCinemaModal(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-purple-400 hover:text-purple-300 transition-colors"
+              title="سینما روم (Watch Together)"
+            >
+              <Film size={18} />
+            </button>
+          )}
           <button
             onClick={() => setShowLeaderboard(true)}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-amber-400 hover:text-amber-300 transition-colors"
@@ -844,6 +855,7 @@ export default function HomePage() {
             onSend={handleSendMessage}
             onJoinGame={handleJoinGame}
             onOpenGame={() => setIsGameOpen(true)}
+            onOpenCinema={() => setShowCinemaModal(true)}
             activeSessionId={activeSession?.id}
             userInActiveGame={userInActiveGame}
             roomName={selectedRoom?.name ?? "-"}
@@ -875,6 +887,7 @@ export default function HomePage() {
           hasActiveGame={Boolean(activeSession) && activeSession?.status !== "finished"}
           onCreateInvite={handleCreateInvite}
           onOpenSettings={() => setShowRoomSettings(true)}
+          onOpenCinema={() => setShowCinemaModal(true)}
           isAdmin={userProfile?.isAdmin ?? false}
           currentUserId={user?.id ?? null}
           ownerId={selectedRoom?.ownerId ?? null}
@@ -907,6 +920,7 @@ export default function HomePage() {
             onSend={handleSendMessage}
             onJoinGame={handleJoinGame}
             onOpenGame={() => setIsGameOpen(true)}
+            onOpenCinema={() => setShowCinemaModal(true)}
             activeSessionId={activeSession?.id}
             userInActiveGame={userInActiveGame}
             roomName={selectedRoom?.name ?? "-"}
@@ -991,6 +1005,7 @@ export default function HomePage() {
           hasActiveGame={Boolean(activeSession) && activeSession?.status !== "finished"}
           onCreateInvite={handleCreateInvite}
           onOpenSettings={() => { setShowRoomSettings(true); setShowInfoDrawer(false); }}
+          onOpenCinema={() => { setShowCinemaModal(true); setShowInfoDrawer(false); }}
           isAdmin={userProfile?.isAdmin ?? false}
           currentUserId={user?.id ?? null}
           ownerId={selectedRoom?.ownerId ?? null}
@@ -1135,6 +1150,15 @@ export default function HomePage() {
         isOpen={showLeaderboard}
         onClose={() => setShowLeaderboard(false)}
         currentUserId={user?.id}
+        socket={socket}
+      />
+      <CinemaModal
+        isOpen={showCinemaModal}
+        onClose={() => setShowCinemaModal(false)}
+        roomId={selectedRoomId || ""}
+        roomName={selectedRoom?.name || "روم"}
+        currentUserId={user?.id || ""}
+        isRoomOwner={selectedRoom?.ownerId === user?.id || userProfile?.isAdmin || false}
         socket={socket}
       />
     </main>
