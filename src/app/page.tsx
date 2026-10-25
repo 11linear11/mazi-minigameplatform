@@ -15,8 +15,11 @@ import LoadingScreen from "@/components/LoadingScreen";
 import DirectChatPanel from "@/components/DirectChatPanel";
 import LeaderboardModal from "@/components/LeaderboardModal";
 import CinemaModal from "@/components/CinemaModal";
+import RoomCinemaHubModal, { type RoomMovie } from "@/components/RoomCinemaHubModal";
+import RoomTodoModal from "@/components/RoomTodoModal";
+import BrandLogo from "@/components/BrandLogo";
 import type { DMConversation } from "@/components/DirectMessagesDrawer";
-import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film, Gamepad2, Sparkles, Plus, ArrowLeft } from "lucide-react";
+import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film, Gamepad2, Sparkles, Plus, ArrowLeft, Settings } from "lucide-react";
 import { getSocket } from "@/lib/socket";
 import { sounds } from "@/lib/sounds";
 
@@ -52,6 +55,8 @@ export default function HomePage() {
   const [unreadDMCount, setUnreadDMCount] = useState(0);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showCinemaModal, setShowCinemaModal] = useState(false);
+  const [showCinemaHubModal, setShowCinemaHubModal] = useState(false);
+  const [showTodoModal, setShowTodoModal] = useState(false);
   const loadingStartRef = useRef(Date.now());
   const loadingDoneRef = useRef(false);
   const handleLoadingComplete = useCallback(() => {
@@ -96,9 +101,10 @@ export default function HomePage() {
 
     const handleMessage = (message: any) => {
       setMessages((prev) => [...prev, message]);
-      if (isGameOpenRef.current && message.userId !== user?.id && !message.isSystem) {
+      if (isGameOpenRef.current && String(message.userId) !== String(user?.id) && !message.isSystem) {
         const bubbleId = message.id;
         setMiniChatBubbles((prev) => {
+          if (prev.some((b) => b.id === bubbleId)) return prev;
           const next = [...prev, { id: bubbleId, user: message.user, content: message.content, isMine: false }];
           return next.slice(-5);
         });
@@ -153,13 +159,24 @@ export default function HomePage() {
       fetchRooms();
     };
     const handleRoomRemoved = (payload: any) => {
-      if (payload.roomId === selectedRoomIdRef.current) {
-        socket.emit("leave_room", { roomId: payload.roomId, userId: user?.id });
-        setSelectedRoomId(null);
-        setMessages([]);
-        setMembers([]);
-      }
+      setRooms((prev) => {
+        const remaining = prev.filter((r) => r.id !== payload.roomId);
+        if (payload.roomId === selectedRoomIdRef.current) {
+          socket.emit("leave_room", { roomId: payload.roomId, userId: user?.id });
+          if (remaining.length > 0) {
+            setSelectedRoomId(remaining[0].id);
+          } else {
+            setSelectedRoomId(null);
+          }
+          setMessages([]);
+          setMembers([]);
+        }
+        return remaining;
+      });
       fetchRooms();
+    };
+    const handleDeleteRoomError = (payload: any) => {
+      alert(payload?.error === "NOT_OWNER" ? "فقط سازنده یا مدیر روم می‌تواند آن را حذف کند." : "خطا در حذف روم");
     };
     const handleRoomUpdated = (_payload: any) => {
       fetchRooms();
@@ -286,6 +303,7 @@ export default function HomePage() {
     socket.off("room_join_error", handleJoinError);
     socket.off("message_updated", handleMessageUpdated);
     socket.off("room_removed", handleRoomRemoved);
+    socket.off("delete_room_error", handleDeleteRoomError);
     socket.off("room_updated", handleRoomUpdated);
     socket.off("member_update", handleMemberUpdate);
     socket.off("player_disconnected", handlePlayerDisconnected);
@@ -349,6 +367,7 @@ export default function HomePage() {
     socket.on("room_join_error", handleJoinError);
     socket.on("message_updated", handleMessageUpdated);
     socket.on("room_removed", handleRoomRemoved);
+    socket.on("delete_room_error", handleDeleteRoomError);
     socket.on("room_updated", handleRoomUpdated);
     socket.on("member_update", handleMemberUpdate);
     socket.on("player_disconnected", handlePlayerDisconnected);
@@ -378,6 +397,7 @@ export default function HomePage() {
       socket.off("room_join_error", handleJoinError);
       socket.off("message_updated", handleMessageUpdated);
       socket.off("room_removed", handleRoomRemoved);
+      socket.off("delete_room_error", handleDeleteRoomError);
       socket.off("member_update", handleMemberUpdate);
       socket.off("player_disconnected", handlePlayerDisconnected);
       socket.off("player_reconnected", handlePlayerReconnected);
@@ -723,10 +743,26 @@ export default function HomePage() {
     socket.emit("create_invite", { roomId: selectedRoom.id, userId: user.id, ttlMinutes: 120 });
   };
 
-  const handleDeleteRoom = () => {
-    if (!user || !selectedRoom) return;
-    socket.emit("delete_room", { roomId: selectedRoom.id, userId: user.id });
+  const handleDeleteRoom = (roomIdToDelete?: unknown) => {
+    const targetRoomId = typeof roomIdToDelete === "string" && roomIdToDelete ? roomIdToDelete : selectedRoom?.id;
+    if (!user || !targetRoomId || typeof targetRoomId !== "string") return;
+    socket.emit("delete_room", { roomId: targetRoomId, userId: user.id });
     setShowRoomSettings(false);
+    setShowInfoDrawer(false);
+
+    setRooms((prev) => {
+      const remaining = prev.filter((r) => r.id !== targetRoomId);
+      if (selectedRoomIdRef.current === targetRoomId) {
+        if (remaining.length > 0) {
+          setSelectedRoomId(remaining[0].id);
+        } else {
+          setSelectedRoomId(null);
+        }
+        setMessages([]);
+        setMembers([]);
+      }
+      return remaining;
+    });
   };
 
   const handleUpdateRoom = (payload: { name: string; topic: string; icon: string; privacy: "public" | "private" }) => {
@@ -775,7 +811,7 @@ export default function HomePage() {
             <p className="text-[15px] font-bold text-on-surface">{selectedRoom?.name ?? "-"}</p>
           </div>
         ) : (
-          <p className="text-[15px] font-bold text-accent">MazI</p>
+          <BrandLogo size="sm" />
         )}
         <div className="flex items-center gap-1.5">
           {selectedRoomId && (
@@ -794,6 +830,15 @@ export default function HomePage() {
           >
             <Trophy size={18} />
           </button>
+          {selectedRoomId && (selectedRoom?.ownerId === user?.id || userProfile?.isAdmin) && (
+            <button
+              onClick={() => setShowRoomSettings(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:text-accent transition-colors"
+              title="تنظیمات روم"
+            >
+              <Settings size={18} />
+            </button>
+          )}
           {selectedRoomId && (
             <button
               onClick={() => {
@@ -881,6 +926,11 @@ export default function HomePage() {
             onJoinGame={handleJoinGame}
             onOpenGame={() => setIsGameOpen(true)}
             onOpenCinema={() => setShowCinemaModal(true)}
+            onOpenCinemaHub={() => setShowCinemaHubModal(true)}
+            onOpenTodos={() => setShowTodoModal(true)}
+            onOpenSettings={() => setShowRoomSettings(true)}
+            isOwner={selectedRoom?.ownerId === user?.id}
+            isAdmin={userProfile?.isAdmin || false}
             activeSessionId={activeSession?.id}
             userInActiveGame={userInActiveGame}
             roomName={selectedRoom?.name ?? "-"}
@@ -954,6 +1004,8 @@ export default function HomePage() {
           onCreateInvite={handleCreateInvite}
           onOpenSettings={() => setShowRoomSettings(true)}
           onOpenCinema={() => setShowCinemaModal(true)}
+          onOpenCinemaHub={() => setShowCinemaHubModal(true)}
+          onOpenTodos={() => setShowTodoModal(true)}
           isAdmin={userProfile?.isAdmin ?? false}
           currentUserId={user?.id ?? null}
           ownerId={selectedRoom?.ownerId ?? null}
@@ -989,6 +1041,8 @@ export default function HomePage() {
             onJoinGame={handleJoinGame}
             onOpenGame={() => setIsGameOpen(true)}
             onOpenCinema={() => setShowCinemaModal(true)}
+            onOpenCinemaHub={() => setShowCinemaHubModal(true)}
+            onOpenTodos={() => setShowTodoModal(true)}
             activeSessionId={activeSession?.id}
             userInActiveGame={userInActiveGame}
             roomName={selectedRoom?.name ?? "-"}
@@ -1083,6 +1137,8 @@ export default function HomePage() {
           onCreateInvite={handleCreateInvite}
           onOpenSettings={() => { setShowRoomSettings(true); setShowInfoDrawer(false); }}
           onOpenCinema={() => { setShowCinemaModal(true); setShowInfoDrawer(false); }}
+          onOpenCinemaHub={() => { setShowCinemaHubModal(true); setShowInfoDrawer(false); }}
+          onOpenTodos={() => { setShowTodoModal(true); setShowInfoDrawer(false); }}
           isAdmin={userProfile?.isAdmin ?? false}
           currentUserId={user?.id ?? null}
           ownerId={selectedRoom?.ownerId ?? null}
@@ -1222,7 +1278,7 @@ export default function HomePage() {
           onClose={() => setShowRoomSettings(false)}
           onSave={handleUpdateRoom}
           onRefresh={fetchRooms}
-          onDeleteRoom={handleDeleteRoom}
+          onDeleteRoom={() => handleDeleteRoom()}
         />
       )}
       <LeaderboardModal
@@ -1243,6 +1299,40 @@ export default function HomePage() {
         socket={socket}
         roomMessages={messages}
         onSendMessage={handleSendMessage}
+        onOpenCinemaHub={() => setShowCinemaHubModal(true)}
+      />
+      <RoomCinemaHubModal
+        isOpen={showCinemaHubModal}
+        onClose={() => setShowCinemaHubModal(false)}
+        roomId={selectedRoomId || ""}
+        roomName={selectedRoom?.name || "روم"}
+        currentUserId={user?.id}
+        currentUserName={user?.name}
+        currentUserAvatar={user?.avatar}
+        socket={socket}
+        onWatchInCinema={(movie: RoomMovie) => {
+          if (!selectedRoomId || !socket) return;
+          const isYouTube = Boolean(movie.sourceUrl && (movie.sourceUrl.includes("youtube.com") || movie.sourceUrl.includes("youtu.be")));
+          socket.emit("cinema_set_source", {
+            roomId: selectedRoomId,
+            type: isYouTube ? "youtube" : movie.sourceUrl ? "url" : "url",
+            url: movie.sourceUrl || "",
+            title: movie.title,
+            duration: 0,
+            hostOnly: false,
+            autoPlay: true,
+          });
+          setShowCinemaModal(true);
+        }}
+      />
+      <RoomTodoModal
+        isOpen={showTodoModal}
+        onClose={() => setShowTodoModal(false)}
+        roomId={selectedRoomId || ""}
+        roomName={selectedRoom?.name || "روم"}
+        members={members}
+        currentUserId={user?.id}
+        socket={socket}
       />
     </main>
       )}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Smile, Send, Gamepad2, Users, Hash, X, Film, Sparkles } from "lucide-react";
+import { Smile, Send, Gamepad2, Users, Hash, X, Film, Sparkles, Star, CheckSquare, Settings } from "lucide-react";
 import EmojiPicker, { type EmojiClickData, Theme as EmojiTheme, EmojiStyle } from "emoji-picker-react";
 import type { Message } from "@/data/mock";
 
@@ -12,6 +12,11 @@ type ChatPanelProps = {
   onJoinGame: (sessionId?: string) => void;
   onOpenGame: () => void;
   onOpenCinema?: () => void;
+  onOpenCinemaHub?: () => void;
+  onOpenTodos?: () => void;
+  onOpenSettings?: () => void;
+  isOwner?: boolean;
+  isAdmin?: boolean;
   activeSessionId?: string | null;
   userInActiveGame: boolean;
   roomName: string;
@@ -26,6 +31,11 @@ export default function ChatPanel({
   onJoinGame,
   onOpenGame,
   onOpenCinema,
+  onOpenCinemaHub,
+  onOpenTodos,
+  onOpenSettings,
+  isOwner,
+  isAdmin,
   activeSessionId,
   roomName,
   roomTopic,
@@ -93,15 +103,50 @@ export default function ChatPanel({
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenCinemaHub && (
+            <button
+              type="button"
+              onClick={onOpenCinemaHub}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-400/30 text-xs font-bold transition-all shadow-sm hover:scale-105 active:scale-95"
+              title="سینماتک، ویش‌لیست و نمره‌دهی به فیلم‌ها"
+            >
+              <Star size={14} className="text-amber-400 fill-amber-400" />
+              <span>فیلم‌ها و ویش‌لیست 🎬</span>
+            </button>
+          )}
+
+          {onOpenTodos && (
+            <button
+              type="button"
+              onClick={onOpenTodos}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 text-xs font-bold transition-all shadow-sm hover:scale-105 active:scale-95"
+              title="مدیریت کارهای گروهی روم"
+            >
+              <CheckSquare size={14} className="text-emerald-400" />
+              <span>کارهای روم 📋</span>
+            </button>
+          )}
+
           {onOpenCinema && (
             <button
               type="button"
               onClick={onOpenCinema}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-400/30 text-xs font-bold transition-all shadow-sm hover:scale-105 active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-panel-soft hover:bg-panel-high text-muted hover:text-on-surface border border-outline text-xs font-bold transition-all shadow-sm hover:scale-105 active:scale-95"
               title="سینما روم (تماشای همزمان فیلم)"
             >
-              <Film size={15} className="text-purple-400" />
-              <span>سینما روم 🎬</span>
+              <Film size={14} className="text-purple-400" />
+              <span>پخش زنده</span>
+            </button>
+          )}
+
+          {(isOwner || isAdmin) && onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="flex items-center justify-center h-9 w-9 rounded-xl bg-panel-soft hover:bg-panel-high text-muted hover:text-on-surface border border-outline transition-all shadow-sm hover:scale-105 active:scale-95"
+              title="تنظیمات روم"
+            >
+              <Settings size={16} />
             </button>
           )}
         </div>

@@ -111,11 +111,61 @@ export function initDB() {
       createdAt TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS room_movies (
+      id TEXT PRIMARY KEY,
+      roomId TEXT NOT NULL REFERENCES rooms(roomId),
+      title TEXT NOT NULL,
+      type TEXT DEFAULT 'movie',
+      poster TEXT,
+      genre TEXT,
+      year TEXT,
+      sourceUrl TEXT,
+      status TEXT DEFAULT 'wishlist',
+      addedBy TEXT NOT NULL,
+      addedByName TEXT,
+      upvotes TEXT DEFAULT '[]',
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS room_movie_ratings (
+      id TEXT PRIMARY KEY,
+      roomId TEXT NOT NULL REFERENCES rooms(roomId),
+      movieId TEXT NOT NULL REFERENCES room_movies(id) ON DELETE CASCADE,
+      userId TEXT NOT NULL,
+      userName TEXT,
+      userAvatar TEXT,
+      rating REAL NOT NULL,
+      review TEXT,
+      tags TEXT DEFAULT '[]',
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now')),
+      UNIQUE(roomId, movieId, userId)
+    );
+
+    CREATE TABLE IF NOT EXISTS room_todos (
+      id TEXT PRIMARY KEY,
+      roomId TEXT NOT NULL REFERENCES rooms(roomId),
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'todo',
+      priority TEXT DEFAULT 'medium',
+      assignedTo TEXT,
+      assignedToName TEXT,
+      dueDate TEXT,
+      createdBy TEXT NOT NULL,
+      createdByName TEXT,
+      completedAt TEXT,
+      createdAt TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(roomId, createdAt);
     CREATE INDEX IF NOT EXISTS idx_room_members_user ON room_members(userId);
     CREATE INDEX IF NOT EXISTS idx_invites_room ON invites(roomId);
     CREATE INDEX IF NOT EXISTS idx_dm_pair ON direct_messages(senderId, receiverId, createdAt);
     CREATE INDEX IF NOT EXISTS idx_dm_receiver_read ON direct_messages(receiverId, isRead);
+    CREATE INDEX IF NOT EXISTS idx_room_movies_room ON room_movies(roomId, status);
+    CREATE INDEX IF NOT EXISTS idx_room_ratings_movie ON room_movie_ratings(roomId, movieId);
+    CREATE INDEX IF NOT EXISTS idx_room_todos_room ON room_todos(roomId, status);
   `);
 
   // migrations

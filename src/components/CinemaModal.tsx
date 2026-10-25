@@ -24,6 +24,7 @@ import {
   MessageSquare,
   Send,
   Users,
+  Star,
 } from "lucide-react";
 import { sounds } from "@/lib/sounds";
 
@@ -66,6 +67,7 @@ interface CinemaModalProps {
   socket: any;
   roomMessages?: any[];
   onSendMessage?: (content: string) => void;
+  onOpenCinemaHub?: () => void;
 }
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -145,6 +147,7 @@ export default function CinemaModal({
   socket,
   roomMessages = [],
   onSendMessage,
+  onOpenCinemaHub,
 }: CinemaModalProps) {
   const [cinemaState, setCinemaState] = useState<CinemaState | null>(null);
   const [activeTab, setActiveTab] = useState<"stream" | "youtube" | "local" | "url">("stream");
@@ -172,7 +175,9 @@ export default function CinemaModal({
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   // Live in-cinema chat & reactions state
-  const [showCinemaChat, setShowCinemaChat] = useState(false);
+  const [showCinemaChat, setShowCinemaChat] = useState(true);
+  const [isChatInputOpen, setIsChatInputOpen] = useState(false);
+  const floatingChatInputRef = useRef<HTMLInputElement | null>(null);
   const [chatMessageText, setChatMessageText] = useState("");
   const [floatingReactions, setFloatingReactions] = useState<
     Array<{ id: string; emoji: string; user: string; x: number }>
@@ -274,22 +279,35 @@ export default function CinemaModal({
 
   // Listen to new room messages and display floating bubbles in cinema
   const lastMessageIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && roomMessages.length > 0 && lastMessageIdRef.current === null) {
+      lastMessageIdRef.current = roomMessages[roomMessages.length - 1]?.id || null;
+    }
+    if (!isOpen) {
+      lastMessageIdRef.current = null;
+      setChatOverlayBubbles([]);
+    }
+  }, [isOpen, roomMessages]);
+
   useEffect(() => {
     if (!isOpen || roomMessages.length === 0) return;
     const latest = roomMessages[roomMessages.length - 1];
-    if (latest && latest.id !== lastMessageIdRef.current && !latest.isSystem) {
+    if (latest && latest.id && latest.id !== lastMessageIdRef.current && !latest.isSystem) {
       lastMessageIdRef.current = latest.id;
       const bubble = {
         id: latest.id,
         user: latest.user,
         content: latest.content,
-        isMine: latest.userId === currentUserId,
+        isMine: String(latest.userId) === String(currentUserId),
       };
-      setChatOverlayBubbles((prev) => [...prev.slice(-3), bubble]);
-      const timer = setTimeout(() => {
+      setChatOverlayBubbles((prev) => {
+        if (prev.some((b) => b.id === latest.id)) return prev;
+        return [...prev.slice(-4), bubble];
+      });
+      setTimeout(() => {
         setChatOverlayBubbles((prev) => prev.filter((b) => b.id !== bubble.id));
       }, 4000);
-      return () => clearTimeout(timer);
     }
   }, [roomMessages, isOpen, currentUserId]);
 
@@ -1094,6 +1112,19 @@ export default function CinemaModal({
               </button>
             )}
 
+            {/* Rating / Movie Hub Button */}
+            {onOpenCinemaHub && (
+              <button
+                type="button"
+                onClick={onOpenCinemaHub}
+                title="نمره‌دهی و دیدن نقدهای این اثر"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all shadow-sm active:scale-95"
+              >
+                <Star size={13} className="fill-amber-400 text-amber-400" />
+                <span className="hidden sm:inline">نمره‌دهی و نقد</span>
+              </button>
+            )}
+
             {/* Close Button */}
             <button
               onClick={() => {
@@ -1118,18 +1149,90 @@ export default function CinemaModal({
 
           {/* Left/Center Area: Video Theater */}
           <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-black">
-            {/* Floating Chat Bubbles on Video */}
-            {chatOverlayBubbles.length > 0 && !showCinemaChat && (
-              <div className="absolute bottom-20 right-4 z-30 flex flex-col gap-2 max-w-xs pointer-events-none">
-                {chatOverlayBubbles.map((b) => (
-                  <div
-                    key={b.id}
-                    className="animate-mini-chat-bubble rounded-2xl bg-black/75 backdrop-blur-md border border-white/15 px-3 py-1.5 text-xs text-white shadow-lg"
-                  >
-                    <span className="font-bold text-accent text-[11px] block">{b.user}:</span>
-                    <span className="text-[13px]">{b.content}</span>
+            {/* Floating Live Chat & Bubbles on Video (like in games) */}
+            {showCinemaChat && (
+              <div
+                dir="rtl"
+                className="absolute bottom-16 sm:bottom-20 right-4 sm:right-6 z-40 w-[calc(100%-2rem)] sm:w-80 pointer-events-none flex flex-col gap-2"
+              >
+                {/* Floating Bubbles Stack */}
+                {chatOverlayBubbles.length > 0 && (
+                  <div className="pointer-events-auto flex flex-col gap-2">
+                    {chatOverlayBubbles.map((bubble) => (
+                      <div
+                        key={bubble.id}
+                        className={`flex ${bubble.isMine ? "justify-start" : "justify-end"}`}
+                      >
+                        <div
+                          className={`animate-mini-chat-bubble max-w-[85%] rounded-2xl border px-3.5 py-2 shadow-2xl backdrop-blur-md ${
+                            bubble.isMine
+                              ? "rounded-tr-none border-outline bg-panel/95 text-white"
+                              : "rounded-tl-none border-outline bg-panel-soft/95 text-white"
+                          }`}
+                        >
+                          {!bubble.isMine && (
+                            <span className="text-[11px] text-accent font-bold block mb-0.5">
+                              {bubble.user}
+                            </span>
+                          )}
+                          <p className="text-[13px] leading-relaxed break-words">{bubble.content}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* Floating Chat Trigger (FAB Circle) or Expanded Input */}
+                {!isChatInputOpen ? (
+                  <div className="flex justify-start">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsChatInputOpen(true);
+                        setTimeout(() => floatingChatInputRef.current?.focus(), 50);
+                      }}
+                      className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent text-panel-deep shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 border border-amber-300/40 hover:brightness-110"
+                      title="ارسال پیام روی فیلم"
+                    >
+                      <MessageSquare size={19} />
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={(e) => {
+                      handleSendCinemaMessage(e);
+                      setIsChatInputOpen(false);
+                    }}
+                    className="pointer-events-auto flex items-center gap-1.5 rounded-2xl border border-outline bg-panel-deep/95 p-1.5 backdrop-blur-md shadow-2xl animate-fade-in w-full"
+                  >
+                    <input
+                      ref={floatingChatInputRef}
+                      className="flex-1 rounded-xl border border-outline bg-panel px-3 py-1.5 text-xs text-white placeholder-muted/60 outline-none transition-colors focus:border-accent"
+                      placeholder="پیام روی فیلم... (Enter)"
+                      value={chatMessageText}
+                      onChange={(e) => setChatMessageText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setIsChatInputOpen(false);
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatMessageText.trim()}
+                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-panel-deep transition-all hover:brightness-110 active:scale-90 disabled:opacity-40 shrink-0 shadow-sm"
+                      title="ارسال پیام"
+                    >
+                      <Send size={14} className="rotate-180" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsChatInputOpen(false)}
+                      className="flex h-8 w-8 items-center justify-center rounded-xl text-muted hover:text-white hover:bg-white/10 transition-colors shrink-0"
+                      title="بستن"
+                    >
+                      <X size={15} />
+                    </button>
+                  </form>
+                )}
               </div>
             )}
 
@@ -1741,88 +1844,6 @@ export default function CinemaModal({
               </div>
             )}
           </div>
-
-          {/* Right/Side Live Chat Drawer (Toggleable) */}
-          {showCinemaChat && (
-            <div className="w-80 border-r border-outline bg-panel-dim/95 flex flex-col shrink-0 animate-fade-in z-30">
-              {/* Chat Header */}
-              <div className="p-3 border-b border-outline flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <MessageSquare size={16} className="text-accent" />
-                  <span className="text-xs font-bold text-on-surface">چت زنده سینما</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowCinemaChat(false)}
-                  className="p-1 rounded-lg text-muted hover:text-white hover:bg-white/5"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              {/* Chat Feed */}
-              <div
-                ref={chatScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 custom-scrollbar text-right"
-              >
-                {roomMessages.length === 0 ? (
-                  <div className="py-12 text-center text-xs text-muted/50">
-                    هنوز پیامی ارسال نشده است. در حین پخش فیلم نظر بدید!
-                  </div>
-                ) : (
-                  roomMessages.map((msg) => {
-                    const isMine = msg.userId === currentUserId;
-                    return msg.isSystem ? (
-                      <div key={msg.id} className="text-center my-1 text-[10px] text-muted/60">
-                        {msg.content}
-                      </div>
-                    ) : (
-                      <div
-                        key={msg.id}
-                        className={`flex flex-col ${isMine ? "items-start" : "items-end"}`}
-                      >
-                        {!isMine && (
-                          <span className="text-[10px] font-bold text-accent mb-0.5">
-                            {msg.user}
-                          </span>
-                        )}
-                        <div
-                          className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] leading-relaxed break-words ${
-                            isMine
-                              ? "bg-accent text-panel-deep font-semibold rounded-bl-sm"
-                              : "bg-panel-soft border border-outline text-slate-100 rounded-br-sm"
-                          }`}
-                        >
-                          {msg.content}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Chat Input */}
-              <form
-                onSubmit={handleSendCinemaMessage}
-                className="p-2.5 border-t border-outline bg-panel-deep flex items-center gap-2"
-              >
-                <input
-                  type="text"
-                  placeholder="نظرت چیه؟..."
-                  value={chatMessageText}
-                  onChange={(e) => setChatMessageText(e.target.value)}
-                  className="flex-1 h-9 rounded-xl bg-panel-soft border border-outline px-3 text-xs text-white placeholder-muted/50 focus:outline-none focus:border-accent"
-                />
-                <button
-                  type="submit"
-                  disabled={!chatMessageText.trim()}
-                  className="h-9 w-9 flex items-center justify-center rounded-xl bg-accent text-panel-deep font-bold disabled:opacity-40 transition-all active:scale-95 shadow-sm"
-                >
-                  <Send size={14} className="rotate-180" />
-                </button>
-              </form>
-            </div>
-          )}
         </div>
       </div>
     </div>

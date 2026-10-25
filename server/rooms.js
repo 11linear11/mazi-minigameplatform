@@ -285,6 +285,9 @@ export function deleteRoom(roomId, userId) {
   }
   db.prepare("DELETE FROM invites WHERE roomId = ?").run(roomId);
   db.prepare("DELETE FROM messages WHERE roomId = ?").run(roomId);
+  db.prepare("DELETE FROM room_movie_ratings WHERE roomId = ?").run(roomId);
+  db.prepare("DELETE FROM room_movies WHERE roomId = ?").run(roomId);
+  db.prepare("DELETE FROM room_todos WHERE roomId = ?").run(roomId);
   db.prepare("DELETE FROM room_members WHERE roomId = ?").run(roomId);
   db.prepare("DELETE FROM rooms WHERE roomId = ?").run(roomId);
   return { error: null };

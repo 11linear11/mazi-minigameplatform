@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Image from "next/image";
-import { Camera, X } from "lucide-react";
+import { Camera, X, Trash2, AlertTriangle } from "lucide-react";
 import { ROOM_ICONS } from "@/data/icons";
 
 type RoomSettingsModalProps = {
@@ -39,6 +39,7 @@ export default function RoomSettingsModal({
   const [icon, setIcon] = useState(initialIcon);
   const [privacy, setPrivacy] = useState<"public" | "private">(initialPrivacy);
   const [avatarPreview, setAvatarPreview] = useState(initialAvatar ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,16 +137,43 @@ export default function RoomSettingsModal({
 
         {onDeleteRoom && (
           <div className="mt-6 border-t border-outline pt-4">
-            <button
-              onClick={() => {
-                if (window.confirm("آیا مطمئنی؟ روم برای همیشه پاک میشه!")) {
-                  onDeleteRoom();
-                }
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500/10 py-3 text-[13px] font-semibold text-red-400 transition-all duration-200 hover:bg-red-500/20 hover:brightness-110"
-            >
-              حذف روم
-            </button>
+            {confirmDelete ? (
+              <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3.5 space-y-2.5 text-right">
+                <div className="flex items-center gap-2 text-red-400 font-bold text-xs">
+                  <AlertTriangle size={16} />
+                  <span>آیا از حذف کامل این روم اطمینان دارید؟</span>
+                </div>
+                <p className="text-[11px] text-muted leading-relaxed">
+                  این عملیات غیرقابل بازگشت است و تمام پیام‌ها، فیلم‌ها و کارهای روم برای همیشه پاک خواهند شد.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="flex-1 py-2 rounded-xl bg-panel-deep text-xs font-semibold text-muted hover:text-white transition-all"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteRoom()}
+                    className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 size={13} />
+                    بله، حذف روم
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500/10 py-3 text-[13px] font-semibold text-red-400 transition-all duration-200 hover:bg-red-500/20 hover:brightness-110"
+              >
+                <Trash2 size={15} />
+                حذف روم
+              </button>
+            )}
           </div>
         )}
 

@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import Image from "next/image";
 import { Camera, User } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
 
 type AuthModalProps = {
   onSubmit: (payload: { username: string; avatar: string; userId: string }) => void;
@@ -113,16 +114,9 @@ export default function AuthModal({ onSubmit, onSubmitLogin, apiUrl }: AuthModal
         <div className="pointer-events-none absolute -bottom-20 -left-20 h-48 w-48 rounded-full bg-purple-500/10 blur-3xl" />
 
         {/* Logo & Header */}
-        <div className="relative mb-6 text-center">
-          <Image
-            src="/assets/images/logo.png"
-            alt="MazI"
-            width={130}
-            height={40}
-            priority
-            className="mx-auto h-8 w-auto object-contain filter drop-shadow-[0_2px_8px_rgba(245,158,11,0.25)]"
-          />
-          <p className="mt-2 text-xs text-muted">
+        <div className="relative mb-6 flex flex-col items-center text-center">
+          <BrandLogo size="lg" />
+          <p className="mt-3 text-xs text-muted">
             {mode === "register" ? "به جمع بازیکنان MazI بپیوندید" : "ورود به حساب کاربری"}
           </p>
         </div>

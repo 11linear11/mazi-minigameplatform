@@ -16,6 +16,8 @@ import {
   X,
   Info,
   ChevronLeft,
+  Star,
+  CheckSquare,
 } from "lucide-react";
 import type { Game, Member } from "@/data/mock";
 
@@ -45,6 +47,8 @@ type RoomInfoPanelProps = {
   roomIcon?: string;
   onOpenDM?: (userId: string, username: string, avatar: string) => void;
   onOpenCinema?: () => void;
+  onOpenCinemaHub?: () => void;
+  onOpenTodos?: () => void;
   activeTab?: "games" | "info";
   onTabChange?: (tab: "games" | "info") => void;
 };
@@ -81,6 +85,8 @@ export default function RoomInfoPanel({
   roomIcon,
   onOpenDM,
   onOpenCinema,
+  onOpenCinemaHub,
+  onOpenTodos,
   activeTab: controlledTab,
   onTabChange,
 }: RoomInfoPanelProps) {
@@ -467,7 +473,37 @@ export default function RoomInfoPanel({
             </div>
           </div>
 
-          {/* Cinema Banner */}
+          {/* Cinema & Features Banners */}
+          <div className="grid grid-cols-2 gap-2">
+            {onOpenCinemaHub && (
+              <button
+                type="button"
+                onClick={onOpenCinemaHub}
+                className="flex flex-col gap-1 p-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-right transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <Star size={16} className="text-amber-400 fill-amber-400" />
+                  <span className="text-[10px] text-purple-300 font-bold">فیلم‌ها</span>
+                </div>
+                <span className="text-xs font-bold text-on-surface">سینماتک و ویش‌لیست</span>
+              </button>
+            )}
+
+            {onOpenTodos && (
+              <button
+                type="button"
+                onClick={onOpenTodos}
+                className="flex flex-col gap-1 p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-right transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <CheckSquare size={16} className="text-emerald-400" />
+                  <span className="text-[10px] text-emerald-300 font-bold">تسک‌ها</span>
+                </div>
+                <span className="text-xs font-bold text-on-surface">کارهای روم</span>
+              </button>
+            )}
+          </div>
+
           {onOpenCinema && (
             <div>
               <button

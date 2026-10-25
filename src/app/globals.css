@@ -252,13 +252,13 @@ body {
 
 @keyframes miniChatBubble {
   0% { opacity: 0; transform: translateY(10px) scale(0.95); }
-  15% { opacity: 1; transform: translateY(0) scale(1); }
-  65% { opacity: 1; transform: translateY(0) scale(1); }
+  12% { opacity: 1; transform: translateY(0) scale(1); }
+  80% { opacity: 1; transform: translateY(0) scale(1); }
   100% { opacity: 0; transform: translateY(-8px) scale(0.95); }
 }
 
 .animate-mini-chat-bubble {
-  animation: miniChatBubble 3s ease-in-out forwards;
+  animation: miniChatBubble 4s ease-in-out forwards;
 }
 
 @keyframes floatReaction {

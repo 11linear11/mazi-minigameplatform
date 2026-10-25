@@ -71,7 +71,24 @@ import {
   pauseVideo,
   seekVideo,
   updateVideoConfig,
+  deleteCinemaRoom,
 } from "./cinema.js";
+import {
+  getRoomMovies,
+  addRoomMovie,
+  toggleUpvoteRoomMovie,
+  updateRoomMovieStatus,
+  rateRoomMovie,
+  getMovieRatings,
+  deleteRoomMovie,
+} from "./roomMovies.js";
+import {
+  getRoomTodos,
+  createRoomTodo,
+  toggleRoomTodo,
+  updateRoomTodo,
+  deleteRoomTodo,
+} from "./roomTodos.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -491,12 +508,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("delete_room", ({ roomId, userId }) => {
-    const effectiveUserId = socket.data?.userId || userId;
+    const effectiveUserId = userId || socket.data?.userId;
     const result = deleteRoom(roomId, effectiveUserId);
     if (result.error) {
       socket.emit("delete_room_error", { error: result.error });
       return;
     }
+    deleteCinemaRoom(roomId);
     for (const [sessionId, session] of sessions) {
       if (session.roomId === roomId) {
         sessions.delete(sessionId);
@@ -510,6 +528,7 @@ io.on("connection", (socket) => {
     }
     io.emit("room_removed", { roomId });
     socket.emit("room_deleted", { roomId });
+    io.in(roomId).socketsLeave(roomId);
   });
 
   socket.on("update_room", ({ roomId, userId, name, icon, topic, privacy }) => {
@@ -1301,6 +1320,251 @@ io.on("connection", (socket) => {
       };
       io.to("user:" + msg.senderId).emit("dm:game_launch", launchData);
       io.to("user:" + msg.receiverId).emit("dm:game_launch", launchData);
+    }
+  });
+
+  // --- Room Movies & Wishlist & Ratings ---
+  socket.on("room_movies_get", ({ roomId }, callback) => {
+    if (!roomId) return;
+    try {
+      socket.join(roomId);
+      const movies = getRoomMovies(roomId);
+      if (typeof callback === "function") callback(movies);
+      else socket.emit("room_movies_data", movies);
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_movie_add", ({ roomId, movie, userId: pUserId }, callback) => {
+    if (!roomId || !movie) return;
+    socket.join(roomId);
+    const authorId = socket.data?.userId || pUserId;
+    const profile = authorId ? getProfile(authorId) : null;
+    const user = {
+      userId: authorId,
+      userName: profile?.username || "کاربر",
+      avatar: profile?.avatar || "👤",
+    };
+    try {
+      const created = addRoomMovie(roomId, movie, user);
+      const allMovies = getRoomMovies(roomId);
+      io.to(roomId).emit("room_movies_updated", allMovies);
+      socket.emit("room_movies_updated", allMovies);
+      if (typeof callback === "function") callback({ success: true, movie: created, allMovies });
+
+      const isWishlist = (movie.status || "wishlist") === "wishlist";
+      const sysMsg = {
+        id: `sys-${Date.now()}`,
+        user: "System",
+        avatar: "🎬",
+        content: `${user.userName} اثر «${created.title}» را به ${isWishlist ? "ویش‌لیست" : "سینماتک"} اضافه کرد!`,
+        time: new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }),
+        isSystem: true,
+      };
+      addMessage(roomId, sysMsg);
+      io.to(roomId).emit("message_received", sysMsg);
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_movie_upvote", ({ roomId, movieId, userId: pUserId }, callback) => {
+    if (!roomId || !movieId) return;
+    socket.join(roomId);
+    const authorId = socket.data?.userId || pUserId;
+    if (!authorId) return;
+    const profile = getProfile(authorId);
+    const user = { userId: authorId, userName: profile?.username || "کاربر" };
+    try {
+      const res = toggleUpvoteRoomMovie(roomId, movieId, user);
+      const allMovies = getRoomMovies(roomId);
+      io.to(roomId).emit("room_movies_updated", allMovies);
+      socket.emit("room_movies_updated", allMovies);
+      if (typeof callback === "function") callback({ success: true, allMovies, ...res });
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_movie_status", ({ roomId, movieId, status }, callback) => {
+    if (!roomId || !movieId || !status) return;
+    socket.join(roomId);
+    try {
+      const updated = updateRoomMovieStatus(roomId, movieId, status);
+      const allMovies = getRoomMovies(roomId);
+      io.to(roomId).emit("room_movies_updated", allMovies);
+      socket.emit("room_movies_updated", allMovies);
+      if (typeof callback === "function") callback({ success: true, movie: updated, allMovies });
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_movie_rate", ({ roomId, movieId, rating, review, tags, userId: pUserId }, callback) => {
+    if (!roomId || !movieId) return;
+    socket.join(roomId);
+    const authorId = socket.data?.userId || pUserId;
+    if (!authorId) return;
+    const profile = getProfile(authorId);
+    const user = {
+      userId: authorId,
+      userName: profile?.username || "کاربر",
+      avatar: profile?.avatar || "👤",
+    };
+    try {
+      const res = rateRoomMovie(roomId, movieId, { rating, review, tags }, user);
+      awardXp(authorId, 5);
+      const allMovies = getRoomMovies(roomId);
+      io.to(roomId).emit("room_movies_updated", allMovies);
+      socket.emit("room_movies_updated", allMovies);
+      io.to(roomId).emit("room_movie_rated", { movieId, ...res });
+      if (typeof callback === "function") callback({ success: true, allMovies, ...res });
+
+      const reviewSnippet = review ? ` — «${review.slice(0, 50)}${review.length > 50 ? "..." : ""}»` : "";
+      const sysMsg = {
+        id: `sys-${Date.now()}`,
+        user: "System",
+        avatar: "⭐",
+        content: `${user.userName} به «${res.movie?.title || "فیلم"}» نمره ${rating} از ۱۰ داد${reviewSnippet}`,
+        time: new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }),
+        isSystem: true,
+      };
+      addMessage(roomId, sysMsg);
+      io.to(roomId).emit("message_received", sysMsg);
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_movie_ratings_get", ({ roomId, movieId }, callback) => {
+    if (!roomId || !movieId) return;
+    socket.join(roomId);
+    try {
+      const ratings = getMovieRatings(roomId, movieId);
+      if (typeof callback === "function") callback({ ratings });
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_movie_delete", ({ roomId, movieId }, callback) => {
+    if (!roomId || !movieId) return;
+    socket.join(roomId);
+    try {
+      deleteRoomMovie(roomId, movieId);
+      const allMovies = getRoomMovies(roomId);
+      io.to(roomId).emit("room_movies_updated", allMovies);
+      socket.emit("room_movies_updated", allMovies);
+      if (typeof callback === "function") callback({ success: true, allMovies });
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  // --- Room To-Dos ---
+  socket.on("room_todos_get", ({ roomId }, callback) => {
+    if (!roomId) return;
+    socket.join(roomId);
+    try {
+      const todos = getRoomTodos(roomId);
+      if (typeof callback === "function") callback(todos);
+      else socket.emit("room_todos_data", todos);
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_todo_create", ({ roomId, todo, userId: pUserId }, callback) => {
+    if (!roomId || !todo) return;
+    socket.join(roomId);
+    const authorId = socket.data?.userId || pUserId;
+    const profile = authorId ? getProfile(authorId) : null;
+    const user = {
+      userId: authorId,
+      userName: profile?.username || "کاربر",
+    };
+    try {
+      const created = createRoomTodo(roomId, todo, user);
+      const allTodos = getRoomTodos(roomId);
+      io.to(roomId).emit("room_todos_updated", allTodos);
+      socket.emit("room_todos_updated", allTodos);
+      if (typeof callback === "function") callback({ success: true, todo: created, allTodos });
+
+      const sysMsg = {
+        id: `sys-${Date.now()}`,
+        user: "System",
+        avatar: "📋",
+        content: `${user.userName} تسک جدید «${created.title}» را اضافه کرد`,
+        time: new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }),
+        isSystem: true,
+      };
+      addMessage(roomId, sysMsg);
+      io.to(roomId).emit("message_received", sysMsg);
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_todo_toggle", ({ roomId, todoId, userId: pUserId }, callback) => {
+    if (!roomId || !todoId) return;
+    socket.join(roomId);
+    const authorId = socket.data?.userId || pUserId;
+    const profile = authorId ? getProfile(authorId) : null;
+    const user = { userId: authorId, userName: profile?.username || "کاربر" };
+    try {
+      const updated = toggleRoomTodo(roomId, todoId, user);
+      const allTodos = getRoomTodos(roomId);
+      io.to(roomId).emit("room_todos_updated", allTodos);
+      socket.emit("room_todos_updated", allTodos);
+      if (typeof callback === "function") callback({ success: true, todo: updated, allTodos });
+
+      if (updated.status === "done") {
+        if (authorId) awardXp(authorId, 3);
+        const sysMsg = {
+          id: `sys-${Date.now()}`,
+          user: "System",
+          avatar: "✅",
+          content: `تسک «${updated.title}» توسط ${user.userName} انجام شد!`,
+          time: new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit" }),
+          isSystem: true,
+        };
+        addMessage(roomId, sysMsg);
+        io.to(roomId).emit("message_received", sysMsg);
+      }
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_todo_update", ({ roomId, todoId, updates, userId: pUserId }, callback) => {
+    if (!roomId || !todoId) return;
+    socket.join(roomId);
+    const authorId = socket.data?.userId || pUserId;
+    const profile = authorId ? getProfile(authorId) : null;
+    const user = { userId: authorId, userName: profile?.username || "کاربر" };
+    try {
+      const updated = updateRoomTodo(roomId, todoId, updates || {}, user);
+      const allTodos = getRoomTodos(roomId);
+      io.to(roomId).emit("room_todos_updated", allTodos);
+      socket.emit("room_todos_updated", allTodos);
+      if (typeof callback === "function") callback({ success: true, todo: updated, allTodos });
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
+    }
+  });
+
+  socket.on("room_todo_delete", ({ roomId, todoId }, callback) => {
+    if (!roomId || !todoId) return;
+    socket.join(roomId);
+    try {
+      deleteRoomTodo(roomId, todoId);
+      const allTodos = getRoomTodos(roomId);
+      io.to(roomId).emit("room_todos_updated", allTodos);
+      socket.emit("room_todos_updated", allTodos);
+      if (typeof callback === "function") callback({ success: true, allTodos });
+    } catch (err) {
+      if (typeof callback === "function") callback({ error: err.message });
     }
   });
 });

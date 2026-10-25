@@ -140,3 +140,7 @@ export function resetCinema(roomId) {
   cinemaRooms.set(roomId, state);
   return state;
 }
+
+export function deleteCinemaRoom(roomId) {
+  cinemaRooms.delete(roomId);
+}

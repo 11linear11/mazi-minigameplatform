@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Search, Plus, Hash, Lock, TimerIcon, Users, Settings, Award, Gamepad2, MessageSquare, Trophy } from "lucide-react";
 import type { Profile, Room } from "@/data/mock";
 import type { DMConversation } from "@/components/DirectMessagesDrawer";
+import BrandLogo from "@/components/BrandLogo";
 
 type RoomListProps = {
   rooms: Room[];
@@ -87,14 +88,7 @@ export default function RoomList({
           ) : <div className="w-8" />}
 
           <div className="flex items-center justify-center">
-            <Image
-              src="/assets/images/logo.png"
-              alt="MazI"
-              width={140}
-              height={42}
-              priority
-              className="h-9 w-auto object-contain filter drop-shadow-[0_2px_10px_rgba(245,158,11,0.2)]"
-            />
+            <BrandLogo size="md" />
           </div>
 
           <button
