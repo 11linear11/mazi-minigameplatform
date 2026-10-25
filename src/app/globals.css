@@ -3,6 +3,30 @@
 @tailwind utilities;
 
 @font-face {
+  font-family: "Vazirmatn";
+  src: url("/assets/fonts/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/assets/fonts/Vazirmatn-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/assets/fonts/Vazirmatn-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Peyda";
   src: url("/assets/fonts/Vazirmatn-Regular.woff2") format("woff2");
   font-weight: 400;
@@ -36,10 +60,12 @@
 
 body {
   margin: 0;
-  font-family: "Peyda", "Vazirmatn", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #0D1117;
-  color: #dfe2eb;
+  font-family: "Vazirmatn", "Peyda", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #080c14;
+  color: #f1f5f9;
   min-height: 100vh;
+  overflow-x: hidden;
+  letter-spacing: -0.01em;
 }
 
 .scrollbar-hidden {
@@ -51,7 +77,8 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
+  height: 5px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -59,8 +86,12 @@ body {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #30363D;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .cg-wrap,
@@ -85,13 +116,19 @@ body {
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(233, 196, 0, 0.4); }
-  70% { box-shadow: 0 0 0 6px rgba(233, 196, 0, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(233, 196, 0, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  70% { box-shadow: 0 0 0 7px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+@keyframes pulseEmerald {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -100,20 +137,15 @@ body {
   100% { transform: translateX(100%); }
 }
 
-@keyframes progressPulse {
-  0%, 100% { opacity: 0.8; }
-  50% { opacity: 1; }
-}
-
 @keyframes pulseSoft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(0.98); }
 }
 
 @layer components {
   .card {
     @apply rounded-2xl border border-outline shadow-card;
-    background: #1c2026;
+    background: #0f1624;
   }
 
   .card-hover {
@@ -121,19 +153,34 @@ body {
   }
 
   .card-hover:hover {
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 0 15px rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+
+  .glass-panel {
+    background: rgba(15, 22, 36, 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .glow-accent {
-    box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
   }
 
   .golden-glow {
-    background: radial-gradient(circle, rgba(255, 215, 0, 0.15) 0%, rgba(10, 14, 20, 0) 70%);
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.12) 0%, rgba(8, 12, 20, 0) 70%);
   }
 
   .progress-pulse {
-    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
   }
 
   .loading-shimmer {
@@ -141,11 +188,11 @@ body {
   }
 
   .pulse-online {
-    animation: pulse 2s infinite;
+    animation: pulseEmerald 2s infinite;
   }
 
   .msg-enter {
-    animation: fadeIn 0.25s ease-out;
+    animation: fadeIn 0.2s ease-out;
   }
 
   .section-title {
@@ -157,16 +204,16 @@ body {
   }
 
   .status-dot-online {
-    background: #e9c400;
-    animation: pulse 2s infinite;
+    background: #10b981;
+    animation: pulseEmerald 2s infinite;
   }
 
   .status-dot-idle {
-    @apply bg-outline;
+    @apply bg-muted/40;
   }
 
   .status-dot-ingame {
-    @apply bg-panel-highest;
+    @apply bg-accent;
   }
 }
 
@@ -175,31 +222,31 @@ body {
 }
 
 .arena-surface {
-  background: radial-gradient(circle at center, #1a4d2e 0%, #0d1117 80%);
+  background: radial-gradient(circle at center, #0f2b1d 0%, #080c14 85%);
   position: relative;
   overflow: hidden;
   height: 100%;
   width: 100%;
 }
+
 .gold-glow {
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.35);
 }
+
 .gold-glow-strong {
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.5);
 }
-.glass-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
+
 .card-shadow {
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
 }
+
 .card-fan-item {
-  transition: transform 0.2s ease, margin 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), margin 0.2s ease;
 }
+
 .card-fan-item:hover {
-  transform: translateY(-24px) scale(1.1);
+  transform: translateY(-28px) scale(1.12);
   z-index: 50 !important;
 }
 
@@ -213,3 +260,15 @@ body {
 .animate-mini-chat-bubble {
   animation: miniChatBubble 3s ease-in-out forwards;
 }
+
+@keyframes floatReaction {
+  0% { opacity: 0; transform: translateY(0) scale(0.6); }
+  20% { opacity: 1; transform: translateY(-30px) scale(1.25); }
+  80% { opacity: 0.9; transform: translateY(-130px) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-170px) scale(0.8); }
+}
+
+.animate-float-reaction {
+  animation: floatReaction 2.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+

@@ -209,16 +209,18 @@ export default function RoomInfoPanel({
                 <span className="font-medium">{members.length} نفر آنلاین</span>
                 <ChevronLeft size={13} className="text-muted/60" />
               </button>
-              {onOpenCinema && (
-                <button
-                  type="button"
-                  onClick={onOpenCinema}
-                  className="flex items-center gap-1 text-[11px] font-bold text-purple-400 hover:text-purple-300 transition-colors"
-                >
-                  <Film size={13} />
-                  <span>سینما روم</span>
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {onOpenCinema && (
+                  <button
+                    type="button"
+                    onClick={onOpenCinema}
+                    className="flex items-center gap-1 text-[11px] font-bold text-purple-400 hover:text-purple-300 transition-colors"
+                  >
+                    <Film size={13} />
+                    <span>سینما</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

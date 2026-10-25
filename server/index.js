@@ -445,6 +445,13 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
+  socket.on("identify", ({ userId }) => {
+    if (userId) {
+      socket.data.userId = userId;
+      socket.join("user:" + userId);
+    }
+  });
+
   socket.on("create_room", ({ roomId, name, icon, topic, privacy, isTemporary, ownerId }) => {
     const room = createRoom({ roomId, name, icon, topic, privacy, isTemporary, ownerId });
     socket.join(roomId);
@@ -1122,14 +1129,18 @@ io.on("connection", (socket) => {
     else socket.emit("cinema_state", state);
   });
 
-  socket.on("cinema_set_source", ({ roomId, type, url, title, duration, hostOnly, autoPlay }, callback) => {
+  socket.on("cinema_set_source", ({ roomId, type, url, title, duration, hostOnly, autoPlay, userId: pUserId, userName: pUserName }, callback) => {
     if (!roomId) return;
-    const userId = socket.data?.userId;
+    const userId = socket.data?.userId || pUserId;
+    if (userId && !socket.rooms.has("user:" + userId)) {
+      socket.join("user:" + userId);
+    }
     const profile = userId ? getProfile(userId) : null;
+    const userName = profile?.username || pUserName || "کاربر";
     const state = setVideoSource(
       roomId,
       { type, url, title, duration, hostOnly, autoPlay: Boolean(autoPlay) },
-      { userId, userName: profile?.username || "کاربر" }
+      { userId, userName }
     );
     io.to(roomId).emit("cinema_state", state);
     if (typeof callback === "function") callback({ state });
@@ -1185,6 +1196,56 @@ io.on("connection", (socket) => {
     );
     io.to(roomId).emit("cinema_state", state);
     if (typeof callback === "function") callback({ state });
+  });
+
+  // Cinema WebRTC Stream Signaling & Live Reactions
+  socket.on("cinema_stream_join", ({ roomId, userId: pUserId }) => {
+    if (!roomId) return;
+    const userId = socket.data?.userId || pUserId;
+    if (userId && !socket.rooms.has("user:" + userId)) {
+      socket.join("user:" + userId);
+    }
+    const state = getVideoState(roomId);
+    if (state.type === "stream" && state.streamerId && state.streamerId !== userId) {
+      const viewerProfile = userId ? getProfile(userId) : null;
+      io.to("user:" + state.streamerId).emit("cinema_stream_viewer_joined", {
+        viewerId: userId,
+        viewerName: viewerProfile?.username || "کاربر",
+      });
+    }
+  });
+
+  socket.on("cinema_stream_signal", ({ roomId, targetUserId, signal, fromUserId: pFromUserId }) => {
+    if (!roomId || !targetUserId) return;
+    const senderId = socket.data?.userId || pFromUserId;
+    if (senderId && !socket.rooms.has("user:" + senderId)) {
+      socket.join("user:" + senderId);
+    }
+    io.to("user:" + targetUserId).emit("cinema_stream_signal", {
+      fromUserId: senderId,
+      signal,
+    });
+  });
+
+  socket.on("cinema_stream_ice", ({ roomId, targetUserId, candidate, fromUserId: pFromUserId }) => {
+    if (!roomId || !targetUserId) return;
+    const senderId = socket.data?.userId || pFromUserId;
+    io.to("user:" + targetUserId).emit("cinema_stream_ice", {
+      fromUserId: senderId,
+      candidate,
+    });
+  });
+
+  socket.on("cinema_reaction", ({ roomId, reaction, userId: pUserId }) => {
+    if (!roomId || !reaction) return;
+    const senderId = socket.data?.userId || pUserId;
+    const profile = senderId ? getProfile(senderId) : null;
+    io.to(roomId).emit("cinema_reaction", {
+      userId: senderId,
+      userName: profile?.username || "کاربر",
+      reaction,
+      timestamp: Date.now(),
+    });
   });
 
   socket.on("dm:respond_invite", ({ messageId, status }) => {

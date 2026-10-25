@@ -16,7 +16,7 @@ import DirectChatPanel from "@/components/DirectChatPanel";
 import LeaderboardModal from "@/components/LeaderboardModal";
 import CinemaModal from "@/components/CinemaModal";
 import type { DMConversation } from "@/components/DirectMessagesDrawer";
-import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film, Gamepad2 } from "lucide-react";
+import { Hash, Menu, Banana, Users, MessageSquare, Trophy, Film, Gamepad2, Sparkles, Plus, ArrowLeft } from "lucide-react";
 import { getSocket } from "@/lib/socket";
 import { sounds } from "@/lib/sounds";
 
@@ -889,13 +889,54 @@ export default function HomePage() {
             currentUserId={user?.id}
           />
         ) : (
-          <section className="flex h-full flex-col items-center justify-center bg-panel-dim">
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-outline bg-panel-soft">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#e9c400" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <section className="flex h-full flex-col items-center justify-center bg-panel-dim/95 p-8 relative overflow-hidden">
+            <div className="golden-glow pointer-events-none absolute inset-0" />
+            <div className="relative z-10 flex flex-col items-center max-w-md text-center">
+              <div className="relative mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-accent/20 to-accent/5 border border-accent/30 shadow-2xl glow-accent">
+                <Gamepad2 size={40} className="text-accent animate-pulse-soft" />
               </div>
-              <p className="text-lg font-bold text-on-surface">یک روم انتخاب کن</p>
-              <p className="text-[13px] text-muted">از لیست روم‌ها رو انتخاب کن تا چت شروع بشه</p>
+              <h2 className="text-xl font-black text-on-surface">به پلتفرم بازی و چت MazI خوش آمدید!</h2>
+              <p className="mt-2 text-xs text-muted leading-relaxed">
+                یک روم را انتخاب کنید تا چت و بازی‌های چندنفره آنلاین را شروع کنید، یا روم اختصاصی خودتان را بسازید.
+              </p>
+
+              <div className="mt-6 grid grid-cols-2 gap-3 w-full text-right">
+                <button
+                  onClick={() => setShowCreateRoom(true)}
+                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-panel-soft/80 border border-outline hover:border-accent/40 hover:bg-panel transition-all group shadow-sm text-right"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent group-hover:scale-110 transition-transform">
+                    <Plus size={18} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-on-surface">ساخت روم</p>
+                    <p className="text-[10px] text-muted">عمومی یا خصوصی</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setShowLeaderboard(true)}
+                  className="flex items-center gap-2.5 p-3 rounded-2xl bg-panel-soft/80 border border-outline hover:border-amber-400/40 hover:bg-panel transition-all group shadow-sm text-right"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/15 text-amber-400 group-hover:scale-110 transition-transform">
+                    <Trophy size={18} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-on-surface">برترین‌ها</p>
+                    <p className="text-[10px] text-muted">رتبه‌بندی کاربران</p>
+                  </div>
+                </button>
+              </div>
+
+              {rooms.length > 0 && (
+                <button
+                  onClick={() => handleSelectRoom(rooms[0].id)}
+                  className="mt-6 flex items-center gap-2 px-4 py-2 rounded-xl bg-panel-soft/60 border border-outline text-xs font-bold text-accent hover:text-accent-bright hover:border-accent/30 transition-all shadow-sm"
+                >
+                  <span>ورود به روم «{rooms[0].name}»</span>
+                  <ArrowLeft size={14} />
+                </button>
+              )}
             </div>
           </section>
         )}
@@ -956,13 +997,22 @@ export default function HomePage() {
             currentUserId={user?.id}
           />
         ) : (
-          <section className="flex h-full flex-col items-center justify-center bg-panel-dim">
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-outline bg-panel-soft">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#e9c400" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <section className="flex h-full flex-col items-center justify-center bg-panel-dim p-6 relative overflow-hidden">
+            <div className="relative z-10 flex flex-col items-center max-w-sm text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/30 bg-panel-soft shadow-lg glow-accent mb-4">
+                <Gamepad2 size={32} className="text-accent animate-pulse-soft" />
               </div>
-              <p className="text-lg font-bold text-on-surface">یک روم انتخاب کن</p>
-              <p className="text-[13px] text-muted">از لیست روم‌ها رو انتخاب کن تا چت شروع بشه</p>
+              <h2 className="text-lg font-black text-on-surface">به MazI خوش آمدید!</h2>
+              <p className="mt-1.5 text-xs text-muted leading-relaxed">
+                از منوی بالا یک روم انتخاب کنید تا چت و بازی‌ها آغاز شود.
+              </p>
+              <button
+                onClick={() => setShowRoomDrawer(true)}
+                className="mt-5 flex items-center gap-2 rounded-xl bg-accent-bright px-5 py-2 text-xs font-bold text-panel-deep shadow-md"
+              >
+                <span>مشاهده روم‌ها</span>
+                <ArrowLeft size={14} />
+              </button>
             </div>
           </section>
         )}
@@ -1187,8 +1237,12 @@ export default function HomePage() {
         roomId={selectedRoomId || ""}
         roomName={selectedRoom?.name || "روم"}
         currentUserId={user?.id || ""}
+        currentUserName={user?.name || "کاربر"}
+        currentUserAvatar={user?.avatar || "👤"}
         isRoomOwner={selectedRoom?.ownerId === user?.id || userProfile?.isAdmin || false}
         socket={socket}
+        roomMessages={messages}
+        onSendMessage={handleSendMessage}
       />
     </main>
       )}

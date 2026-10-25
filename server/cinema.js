@@ -8,7 +8,7 @@ const cinemaRooms = new Map();
 function defaultState(roomId) {
   return {
     roomId,
-    type: "none", // 'none' | 'url' | 'local'
+    type: "none", // 'none' | 'url' | 'local' | 'youtube' | 'stream'
     url: "",
     title: "",
     duration: 0,
@@ -19,6 +19,8 @@ function defaultState(roomId) {
     hostOnly: false,
     updatedBy: null,
     updatedByName: "سیستم",
+    streamerId: null,
+    streamerName: null,
   };
 }
 
@@ -49,13 +51,13 @@ export function getVideoState(roomId) {
 export function setVideoSource(roomId, { type, url, title, duration = 0, hostOnly = false, autoPlay = false }, user = {}) {
   const current = cinemaRooms.get(roomId) || defaultState(roomId);
 
-  // If hostOnly is enabled and user is not owner/admin (checked upstream or by flag)
+  const isStream = type === "stream";
   const newState = {
     ...current,
     roomId,
     type: type || "url",
     url: url || "",
-    title: title || (type === "local" ? "فایل محلی سیستم" : "ویدیو استریم"),
+    title: title || (isStream ? `پخش زنده فیلم توسط ${user.userName || "میزبان"}` : type === "local" ? "فایل محلی سیستم" : "ویدیو استریم"),
     duration: typeof duration === "number" ? duration : 0,
     status: autoPlay ? "playing" : "paused",
     currentTime: 0,
@@ -63,6 +65,8 @@ export function setVideoSource(roomId, { type, url, title, duration = 0, hostOnl
     hostOnly: Boolean(hostOnly),
     updatedBy: user.userId || null,
     updatedByName: user.userName || "کاربر",
+    streamerId: isStream ? (user.userId || null) : null,
+    streamerName: isStream ? (user.userName || null) : null,
   };
 
   cinemaRooms.set(roomId, newState);

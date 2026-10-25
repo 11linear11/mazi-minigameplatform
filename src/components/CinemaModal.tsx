@@ -20,6 +20,10 @@ import {
   Radio,
   FileVideo,
   Info,
+  Tv,
+  MessageSquare,
+  Send,
+  Users,
 } from "lucide-react";
 import { sounds } from "@/lib/sounds";
 
@@ -33,7 +37,7 @@ function YouTubeIcon({ size = 16, className = "" }: { size?: number; className?:
 
 export interface CinemaState {
   roomId: string;
-  type: "none" | "url" | "local" | "youtube";
+  type: "none" | "url" | "local" | "youtube" | "stream";
   url: string;
   title: string;
   duration: number;
@@ -46,6 +50,8 @@ export interface CinemaState {
   hostOnly: boolean;
   updatedBy?: string | null;
   updatedByName?: string;
+  streamerId?: string | null;
+  streamerName?: string | null;
 }
 
 interface CinemaModalProps {
@@ -54,11 +60,23 @@ interface CinemaModalProps {
   roomId: string;
   roomName: string;
   currentUserId: string;
+  currentUserName?: string;
+  currentUserAvatar?: string;
   isRoomOwner: boolean;
   socket: any;
+  roomMessages?: any[];
+  onSendMessage?: (content: string) => void;
 }
 
-// Extract 11-char YouTube Video ID from any URL format or direct ID
+const RTC_CONFIG: RTCConfiguration = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ],
+};
+
+const CINEMA_REACTIONS = ["🍿", "❤️", "😂", "😱", "🔥", "👏"];
+
 export function extractYouTubeId(url: string): string | null {
   if (!url) return null;
   const trimmed = url.trim();
@@ -71,7 +89,6 @@ export function extractYouTubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// Convert an .srt text string to WebVTT format for native HTML5 video <track>
 function srtToWebVtt(srtText: string): string {
   let vtt = "WEBVTT\n\n";
   const normalized = srtText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -122,11 +139,15 @@ export default function CinemaModal({
   roomId,
   roomName,
   currentUserId,
+  currentUserName = "کاربر",
+  currentUserAvatar = "👤",
   isRoomOwner,
   socket,
+  roomMessages = [],
+  onSendMessage,
 }: CinemaModalProps) {
   const [cinemaState, setCinemaState] = useState<CinemaState | null>(null);
-  const [activeTab, setActiveTab] = useState<"youtube" | "local" | "url">("youtube");
+  const [activeTab, setActiveTab] = useState<"stream" | "youtube" | "local" | "url">("stream");
   const [inputUrl, setInputUrl] = useState("");
   const [inputTitle, setInputTitle] = useState("");
   const [localVideoFile, setLocalVideoFile] = useState<File | null>(null);
@@ -144,25 +165,51 @@ export default function CinemaModal({
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "idle">("idle");
   const [lastActionNotice, setLastActionNotice] = useState<string | null>(null);
 
+  // WebRTC Live Movie Stream state
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [streamConnecting, setStreamConnecting] = useState(false);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
+  // Live in-cinema chat & reactions state
+  const [showCinemaChat, setShowCinemaChat] = useState(false);
+  const [chatMessageText, setChatMessageText] = useState("");
+  const [floatingReactions, setFloatingReactions] = useState<
+    Array<{ id: string; emoji: string; user: string; x: number }>
+  >([]);
+  const [chatOverlayBubbles, setChatOverlayBubbles] = useState<
+    Array<{ id: string; user: string; content: string; isMine: boolean }>
+  >([]);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const viewerPcRef = useRef<RTCPeerConnection | null>(null);
+
   const ytPlayerRef = useRef<any>(null);
   const currentVideoIdRef = useRef<string | null>(null);
   const ytMountContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const isSeekingRef = useRef<boolean>(false);
   const isProgrammaticYtActionRef = useRef<boolean>(false);
 
-  // Sync refs to avoid stale closures in event listeners without re-subscribing
   const cinemaStateRef = useRef<CinemaState | null>(null);
   cinemaStateRef.current = cinemaState;
 
-  // Permission check
   const canControl = !cinemaState?.hostOnly || isRoomOwner;
-
   const canControlRef = useRef<boolean>(canControl);
   canControlRef.current = canControl;
 
-  // Load YouTube IFrame API Script once
+  const isStreamer =
+    isScreenSharing ||
+    (cinemaState?.type === "stream" && cinemaState?.streamerId === currentUserId);
+  const isViewingLiveStream =
+    !isStreamer && cinemaState?.type === "stream";
+
+  // Load YouTube script once
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!(window as any).YT) {
@@ -173,11 +220,21 @@ export default function CinemaModal({
     }
   }, []);
 
-  // Cleanup blob URLs and player on unmount
+  // Cleanup on unmount or close
   useEffect(() => {
     return () => {
       if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
       if (subtitleUrl) URL.revokeObjectURL(subtitleUrl);
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+      }
+      peerConnectionsRef.current.forEach((pc) => pc.close());
+      peerConnectionsRef.current.clear();
+      if (viewerPcRef.current) {
+        viewerPcRef.current.close();
+        viewerPcRef.current = null;
+      }
       if (ytPlayerRef.current) {
         try {
           ytPlayerRef.current.destroy();
@@ -188,7 +245,7 @@ export default function CinemaModal({
     };
   }, [localVideoUrl, subtitleUrl]);
 
-  // Clean up player when modal closes
+  // Clean up when modal closes
   useEffect(() => {
     if (!isOpen) {
       if (ytPlayerRef.current) {
@@ -201,10 +258,399 @@ export default function CinemaModal({
       if (ytMountContainerRef.current) {
         ytMountContainerRef.current.innerHTML = "";
       }
+      if (viewerPcRef.current) {
+        viewerPcRef.current.close();
+        viewerPcRef.current = null;
+      }
     }
   }, [isOpen]);
 
-  // Handle local video selection
+  // Auto scroll cinema chat
+  useEffect(() => {
+    if (showCinemaChat && chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [roomMessages, showCinemaChat]);
+
+  // Listen to new room messages and display floating bubbles in cinema
+  const lastMessageIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen || roomMessages.length === 0) return;
+    const latest = roomMessages[roomMessages.length - 1];
+    if (latest && latest.id !== lastMessageIdRef.current && !latest.isSystem) {
+      lastMessageIdRef.current = latest.id;
+      const bubble = {
+        id: latest.id,
+        user: latest.user,
+        content: latest.content,
+        isMine: latest.userId === currentUserId,
+      };
+      setChatOverlayBubbles((prev) => [...prev.slice(-3), bubble]);
+      const timer = setTimeout(() => {
+        setChatOverlayBubbles((prev) => prev.filter((b) => b.id !== bubble.id));
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [roomMessages, isOpen, currentUserId]);
+
+  // WebRTC: Attach stream to video element reliably
+  const bindStreamVideo = useCallback(
+    (el: HTMLVideoElement | null) => {
+      streamVideoRef.current = el;
+      if (!el) return;
+
+      if (isStreamer || isScreenSharing) {
+        const stream = localStream || localStreamRef.current;
+        if (stream) {
+          if (el.srcObject !== stream) {
+            el.srcObject = stream;
+          }
+          el.muted = true; // Streamer preview MUST be muted to prevent audio feedback loop
+          el.play().catch(() => {});
+        }
+      } else {
+        const stream = remoteStream || remoteStreamRef.current;
+        if (stream) {
+          if (el.srcObject !== stream) {
+            el.srcObject = stream;
+          }
+          el.muted = isMuted;
+          el.volume = volume;
+          el.play().catch(() => {});
+        }
+      }
+    },
+    [isStreamer, isScreenSharing, localStream, remoteStream, isMuted, volume]
+  );
+
+  // Sync stream to video element whenever state updates
+  useEffect(() => {
+    const el = streamVideoRef.current;
+    if (!el) return;
+
+    if (isStreamer || isScreenSharing) {
+      const stream = localStream || localStreamRef.current;
+      if (stream) {
+        if (el.srcObject !== stream) {
+          el.srcObject = stream;
+        }
+        el.muted = true;
+        el.play().catch(() => {});
+      }
+    } else {
+      const stream = remoteStream || remoteStreamRef.current;
+      if (stream) {
+        if (el.srcObject !== stream) {
+          el.srcObject = stream;
+        }
+        el.muted = isMuted;
+        el.volume = volume;
+        el.play().catch(() => {});
+      }
+    }
+  }, [localStream, remoteStream, isStreamer, isScreenSharing, isMuted, volume, cinemaState?.type]);
+
+  // WebRTC: Start Screen Share / Movie Live Stream
+  const handleStartScreenShare = async () => {
+    try {
+      sounds.playPop();
+
+      const isMobileDevice =
+        typeof window !== "undefined" &&
+        (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768);
+      const hasDisplayMedia =
+        typeof navigator !== "undefined" &&
+        typeof navigator.mediaDevices?.getDisplayMedia === "function";
+
+      if (isMobileDevice || !hasDisplayMedia) {
+        setLastActionNotice(
+          "📱 مرورگرهای موبایل (iOS و اندروید) به دلیل امنیت سیستم‌عامل، امکان اشتراک‌گذاری صفحه را بسته‌اند. برای شیر کردن فیلم، لطفاً از کامپیوتر استفاده کنید یا از تب یوتیوب/لینک مستقیم بهره ببرید."
+        );
+        setTimeout(() => setLastActionNotice(null), 7000);
+        return;
+      }
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true,
+        });
+      } catch (err: any) {
+        if (err.name === "NotAllowedError" || err.name === "AbortError") {
+          return; // User cancelled the screen pick modal
+        }
+        // Fallback without audio constraint
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setIsScreenSharing(true);
+
+      // Optimistically switch modal to stream mode
+      setCinemaState((prev) => ({
+        roomId,
+        type: "stream",
+        url: "",
+        title: `پخش زنده فیلم توسط ${currentUserName}`,
+        duration: 0,
+        status: "playing",
+        currentTime: 0,
+        updatedAt: Date.now(),
+        hostOnly: false,
+        streamerId: currentUserId,
+        streamerName: currentUserName,
+      }));
+
+      // Bind preview element directly if mounted
+      if (streamVideoRef.current) {
+        streamVideoRef.current.srcObject = stream;
+        streamVideoRef.current.muted = true;
+        streamVideoRef.current.play().catch(() => {});
+      }
+
+      // Detect when host stops sharing from browser toolbar
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          handleStopScreenShare();
+        };
+      }
+
+      // Broadcast source to all room members
+      socket?.emit("cinema_set_source", {
+        roomId,
+        type: "stream",
+        url: "",
+        title: `پخش زنده فیلم توسط ${currentUserName}`,
+        duration: 0,
+        hostOnly: false,
+        autoPlay: true,
+        userId: currentUserId,
+        userName: currentUserName,
+      });
+
+      setLastActionNotice("🔴 پخش زنده فیلم آغاز شد!");
+      setTimeout(() => setLastActionNotice(null), 4000);
+    } catch (err: any) {
+      console.warn("Screen share error:", err);
+      if (err.name !== "NotAllowedError" && err.name !== "AbortError") {
+        setLastActionNotice("⚠️ خطا در شروع اشتراک تصویر و صدا");
+        setTimeout(() => setLastActionNotice(null), 4000);
+      }
+    }
+  };
+
+  // WebRTC: Stop Screen Share
+  const handleStopScreenShare = useCallback(() => {
+    sounds.playPop();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    setLocalStream(null);
+    peerConnectionsRef.current.forEach((pc) => pc.close());
+    peerConnectionsRef.current.clear();
+    setIsScreenSharing(false);
+
+    setCinemaState((prev) => (prev?.type === "stream" ? { ...prev, type: "none" } : prev));
+
+    socket?.emit("cinema_set_source", {
+      roomId,
+      type: "none",
+      url: "",
+      title: "",
+      userId: currentUserId,
+    });
+
+    setLastActionNotice("پخش زنده به پایان رسید");
+    setTimeout(() => setLastActionNotice(null), 3000);
+  }, [roomId, socket, currentUserId]);
+
+  // WebRTC: Signaling Socket Listeners
+  useEffect(() => {
+    if (!isOpen || !socket) return;
+
+    // 1. Streamer handles new viewer joining
+    const handleViewerJoined = async ({ viewerId }: { viewerId: string }) => {
+      const activeStream = localStreamRef.current || localStream;
+      if (!activeStream || !viewerId) return;
+
+      try {
+        const pc = new RTCPeerConnection(RTC_CONFIG);
+        peerConnectionsRef.current.set(viewerId, pc);
+
+        activeStream.getTracks().forEach((track) => {
+          pc.addTrack(track, activeStream);
+        });
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit("cinema_stream_ice", {
+              roomId,
+              targetUserId: viewerId,
+              fromUserId: currentUserId,
+              candidate: event.candidate,
+            });
+          }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        socket.emit("cinema_stream_signal", {
+          roomId,
+          targetUserId: viewerId,
+          fromUserId: currentUserId,
+          signal: offer,
+        });
+      } catch (err) {
+        console.error("Failed to create offer for viewer:", viewerId, err);
+      }
+    };
+
+    // 2. Handle incoming WebRTC signals (Offers & Answers)
+    const handleStreamSignal = async ({ fromUserId, signal }: { fromUserId: string; signal: any }) => {
+      try {
+        // Viewer receives Offer from Streamer
+        if (signal?.type === "offer") {
+          setStreamConnecting(true);
+          const pc = new RTCPeerConnection(RTC_CONFIG);
+          viewerPcRef.current = pc;
+
+          pc.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+              const rStream = event.streams[0];
+              remoteStreamRef.current = rStream;
+              setRemoteStream(rStream);
+              setStreamConnecting(false);
+              if (streamVideoRef.current) {
+                streamVideoRef.current.srcObject = rStream;
+                streamVideoRef.current.muted = isMuted;
+                streamVideoRef.current.volume = volume;
+                streamVideoRef.current.play().catch(() => {});
+              }
+            }
+          };
+
+          pc.onicecandidate = (event) => {
+            if (event.candidate) {
+              socket.emit("cinema_stream_ice", {
+                roomId,
+                targetUserId: fromUserId,
+                fromUserId: currentUserId,
+                candidate: event.candidate,
+              });
+            }
+          };
+
+          await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          socket.emit("cinema_stream_signal", {
+            roomId,
+            targetUserId: fromUserId,
+            fromUserId: currentUserId,
+            signal: answer,
+          });
+        }
+        // Streamer receives Answer from Viewer
+        else if (signal?.type === "answer") {
+          const pc = peerConnectionsRef.current.get(fromUserId);
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          }
+        }
+      } catch (err) {
+        console.error("WebRTC signal handling failed:", err);
+        setStreamConnecting(false);
+      }
+    };
+
+    // 3. Handle ICE Candidates
+    const handleStreamIce = async ({ fromUserId, candidate }: { fromUserId: string; candidate: any }) => {
+      try {
+        if (!candidate) return;
+        const iceCandidate = new RTCIceCandidate(candidate);
+        if (viewerPcRef.current && viewerPcRef.current.remoteDescription) {
+          await viewerPcRef.current.addIceCandidate(iceCandidate);
+        } else {
+          const pc = peerConnectionsRef.current.get(fromUserId);
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate(iceCandidate);
+          }
+        }
+      } catch (err) {
+        console.warn("ICE candidate add failed:", err);
+      }
+    };
+
+    // 4. Handle Live Reaction Emojis
+    const handleReaction = ({
+      userId,
+      reaction,
+    }: {
+      userId: string;
+      reaction: string;
+    }) => {
+      const rx = {
+        id: `rx-${Date.now()}-${Math.random()}`,
+        emoji: reaction,
+        user: userId === currentUserId ? "شما" : "کاربر",
+        x: Math.floor(Math.random() * 70) + 15, // 15% to 85% width
+      };
+      setFloatingReactions((prev) => [...prev.slice(-12), rx]);
+      setTimeout(() => {
+        setFloatingReactions((prev) => prev.filter((item) => item.id !== rx.id));
+      }, 2500);
+    };
+
+    socket.on("cinema_stream_viewer_joined", handleViewerJoined);
+    socket.on("cinema_stream_signal", handleStreamSignal);
+    socket.on("cinema_stream_ice", handleStreamIce);
+    socket.on("cinema_reaction", handleReaction);
+
+    return () => {
+      socket.off("cinema_stream_viewer_joined", handleViewerJoined);
+      socket.off("cinema_stream_signal", handleStreamSignal);
+      socket.off("cinema_stream_ice", handleStreamIce);
+      socket.off("cinema_reaction", handleReaction);
+    };
+  }, [isOpen, socket, roomId, currentUserId, localStream, isMuted, volume]);
+
+  // When viewer sees cinemaState is 'stream', send request to join
+  useEffect(() => {
+    if (
+      isOpen &&
+      cinemaState?.type === "stream" &&
+      cinemaState.streamerId &&
+      cinemaState.streamerId !== currentUserId
+    ) {
+      setStreamConnecting(true);
+      socket?.emit("cinema_stream_join", { roomId, userId: currentUserId });
+    }
+  }, [isOpen, cinemaState?.type, cinemaState?.streamerId, currentUserId, roomId, socket]);
+
+  // Send Live Reaction
+  const sendReaction = (emoji: string) => {
+    sounds.playPop();
+    socket?.emit("cinema_reaction", { roomId, reaction: emoji });
+  };
+
+  // Send Live Chat Message
+  const handleSendCinemaMessage = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!chatMessageText.trim()) return;
+    onSendMessage?.(chatMessageText.trim());
+    setChatMessageText("");
+  };
+
+  // Handle local video selection (Syncplay mode)
   const handleSelectLocalVideo = (file: File) => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     const objectUrl = URL.createObjectURL(file);
@@ -223,7 +669,7 @@ export default function CinemaModal({
     }
   };
 
-  // Handle subtitle file selection
+  // Handle subtitle selection
   const handleSelectSubtitle = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -245,12 +691,11 @@ export default function CinemaModal({
     reader.readAsText(file);
   };
 
-  // Initialize YouTube player when state is 'youtube'
+  // Initialize YouTube player
   const initYouTubePlayer = useCallback(
     (videoId: string) => {
       if (!videoId) return;
 
-      // If player already exists and loaded:
       if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === "function") {
         if (currentVideoIdRef.current !== videoId) {
           currentVideoIdRef.current = videoId;
@@ -259,12 +704,8 @@ export default function CinemaModal({
             ytPlayerRef.current.loadVideoById(videoId, 0);
             if (cinemaStateRef.current?.status === "playing") {
               ytPlayerRef.current.playVideo();
-            } else {
-              ytPlayerRef.current.pauseVideo();
             }
-          } catch (e) {
-            console.error("Error switching video:", e);
-          }
+          } catch (_) {}
           setTimeout(() => {
             isProgrammaticYtActionRef.current = false;
           }, 800);
@@ -272,31 +713,22 @@ export default function CinemaModal({
         return;
       }
 
-      let attempts = 0;
       const checkAndMount = () => {
-        attempts++;
-        if (typeof window === "undefined") return;
-
-        const container = ytMountContainerRef.current;
-        const ytReady = (window as any).YT && (window as any).YT.Player;
-
-        if (!ytReady || !container) {
-          if (attempts < 60) {
-            setTimeout(checkAndMount, 100);
-          }
+        if (typeof window === "undefined" || !(window as any).YT || !(window as any).YT.Player) {
+          setTimeout(checkAndMount, 150);
           return;
         }
 
-        if (ytPlayerRef.current) return;
-
-        currentVideoIdRef.current = videoId;
-        container.innerHTML = '<div id="yt-player-target" style="width:100%;height:100%;"></div>';
+        if (!ytMountContainerRef.current) return;
 
         try {
-          ytPlayerRef.current = new (window as any).YT.Player("yt-player-target", {
+          currentVideoIdRef.current = videoId;
+          ytPlayerRef.current = new (window as any).YT.Player(ytMountContainerRef.current, {
             videoId,
+            width: "100%",
+            height: "100%",
             playerVars: {
-              autoplay: 1,
+              autoplay: cinemaStateRef.current?.status === "playing" ? 1 : 0,
               controls: 1,
               enablejsapi: 1,
               rel: 0,
@@ -322,36 +754,20 @@ export default function CinemaModal({
               },
               onStateChange: (event: any) => {
                 if (isProgrammaticYtActionRef.current) return;
-
                 const ytState = event.data;
                 const curTime = event.target.getCurrentTime?.() || 0;
                 const curState = cinemaStateRef.current;
                 const canCtrl = canControlRef.current;
 
-                // 1 = PLAYING
                 if (ytState === 1 && canCtrl) {
                   if (curState?.status !== "playing") {
                     socket?.emit("cinema_play", { roomId, currentTime: curTime });
                   }
-                }
-                // 2 = PAUSED
-                else if (ytState === 2 && canCtrl) {
+                } else if (ytState === 2 && canCtrl) {
                   if (curState?.status !== "paused") {
                     socket?.emit("cinema_pause", { roomId, currentTime: curTime });
                   }
                 }
-              },
-              onError: (event: any) => {
-                console.warn("YouTube Player error:", event.data);
-                const code = event.data;
-                let msg = "خطا در بارگذاری ویدیوی یوتیوب";
-                if (code === 101 || code === 150) {
-                  msg = "این ویدیو اجازه پخش درون سایتی (Embed) را به سایت‌های دیگر نمی‌دهد.";
-                } else if (code === 100 || code === 2) {
-                  msg = "شناسه ویدیو نامعتبر است یا ویدیو خصوصی/حذف شده است.";
-                }
-                setLastActionNotice(`⚠️ ${msg}`);
-                setTimeout(() => setLastActionNotice(null), 5000);
               },
             },
           });
@@ -372,7 +788,7 @@ export default function CinemaModal({
     const handleCinemaState = (state: CinemaState) => {
       setCinemaState(state);
 
-      if (state.updatedByName && state.status !== "idle") {
+      if (state.updatedByName && state.status !== "idle" && state.type !== "stream") {
         const actionText =
           state.status === "playing"
             ? `▶️ ${state.updatedByName} ویدیو را پخش کرد`
@@ -383,7 +799,6 @@ export default function CinemaModal({
 
       const targetTime = state.calculatedCurrentTime ?? state.currentTime;
 
-      // Handle YouTube Player sync
       if (state.type === "youtube" && ytPlayerRef.current && typeof ytPlayerRef.current.getPlayerState === "function") {
         isProgrammaticYtActionRef.current = true;
         try {
@@ -391,22 +806,14 @@ export default function CinemaModal({
           const drift = Math.abs(curTime - targetTime);
 
           if (state.status === "playing") {
-            if (drift > 2.0) {
-              ytPlayerRef.current.seekTo(targetTime, true);
-            }
+            if (drift > 2.0) ytPlayerRef.current.seekTo(targetTime, true);
             const pState = ytPlayerRef.current.getPlayerState?.();
-            if (pState !== 1 && pState !== 3) {
-              ytPlayerRef.current.playVideo();
-            }
+            if (pState !== 1 && pState !== 3) ytPlayerRef.current.playVideo();
             setSyncStatus("synced");
           } else if (state.status === "paused") {
-            if (drift > 1.0) {
-              ytPlayerRef.current.seekTo(state.currentTime, true);
-            }
+            if (drift > 1.0) ytPlayerRef.current.seekTo(state.currentTime, true);
             const pState = ytPlayerRef.current.getPlayerState?.();
-            if (pState === 1 || pState === 3) {
-              ytPlayerRef.current.pauseVideo();
-            }
+            if (pState === 1 || pState === 3) ytPlayerRef.current.pauseVideo();
             setSyncStatus("synced");
           }
         } catch (_) {}
@@ -416,18 +823,15 @@ export default function CinemaModal({
         return;
       }
 
-      // Handle HTML5 Video Player sync
       const video = videoRef.current;
       if (!video) return;
 
       if (state.status === "playing") {
         setSyncStatus("syncing");
         const drift = Math.abs(video.currentTime - targetTime);
-
         if (drift > 1.2 && !isSeekingRef.current) {
           video.currentTime = targetTime;
         }
-
         if (video.paused) {
           video.play().catch(() => {});
         }
@@ -455,59 +859,17 @@ export default function CinemaModal({
     };
   }, [isOpen, socket, roomId]);
 
-  // When cinemaState changes to youtube, mount the player
+  // When cinemaState changes to youtube
   useEffect(() => {
     if (cinemaState?.type === "youtube" && cinemaState.url) {
       initYouTubePlayer(cinemaState.url);
     }
   }, [cinemaState?.type, cinemaState?.url, initYouTubePlayer]);
 
-  // Periodic drift check for HTML5 and YouTube
-  useEffect(() => {
-    if (!isOpen || !cinemaState || cinemaState.status !== "playing") return;
-
-    const interval = setInterval(() => {
-      const curState = cinemaStateRef.current;
-      if (!curState || curState.status !== "playing") return;
-
-      if (curState.type === "youtube" && ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === "function") {
-        try {
-          const curTime = ytPlayerRef.current.getCurrentTime() || 0;
-          const elapsed = (Date.now() - curState.updatedAt) / 1000;
-          const target = curState.currentTime + elapsed * (curState.playbackRate || 1);
-          if (Math.abs(curTime - target) > 3.0) {
-            isProgrammaticYtActionRef.current = true;
-            ytPlayerRef.current.seekTo(target, true);
-            setTimeout(() => {
-              isProgrammaticYtActionRef.current = false;
-            }, 800);
-          }
-        } catch (_) {}
-        return;
-      }
-
-      const video = videoRef.current;
-      if (!video || video.paused || isSeekingRef.current) return;
-
-      const elapsed = (Date.now() - curState.updatedAt) / 1000;
-      const targetTime = curState.currentTime + elapsed * (curState.playbackRate || 1);
-      const drift = Math.abs(video.currentTime - targetTime);
-
-      if (drift > 1.8) {
-        setSyncStatus("syncing");
-        video.currentTime = targetTime;
-        setTimeout(() => setSyncStatus("synced"), 400);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [isOpen, cinemaState]);
-
-  // Play/Pause Action
+  // Play/Pause Action for HTML5 / YouTube
   const togglePlay = useCallback(() => {
     if (!canControl) return;
 
-    // YouTube Toggle
     if (cinemaState?.type === "youtube" && ytPlayerRef.current) {
       try {
         const cur = ytPlayerRef.current.getCurrentTime() || 0;
@@ -531,7 +893,6 @@ export default function CinemaModal({
       return;
     }
 
-    // HTML5 Video Toggle
     const video = videoRef.current;
     if (!video) return;
 
@@ -598,39 +959,32 @@ export default function CinemaModal({
     }
   };
 
-  // Toggle Host Only mode
+  // Toggle Host Only Control
   const handleToggleHostOnly = () => {
     if (!isRoomOwner) return;
     sounds.playPop();
-    const newHostOnly = !cinemaState?.hostOnly;
-    socket?.emit("cinema_config", { roomId, hostOnly: newHostOnly });
+    const nextState = !cinemaState?.hostOnly;
+    socket?.emit("cinema_config", {
+      roomId,
+      hostOnly: nextState,
+    });
   };
 
-  // Toggle Fullscreen
+  // Fullscreen Toggle
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
+      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
     } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
     }
   };
 
-  // Fullscreen change listener
-  useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener("fullscreenchange", handleFsChange);
-    return () => document.removeEventListener("fullscreenchange", handleFsChange);
-  }, []);
-
   if (!isOpen) return null;
 
-  // Has active playable source
   const hasVideoSource =
+    isScreenSharing ||
+    cinemaState?.type === "stream" ||
     (cinemaState?.type === "youtube" && !!cinemaState.url) ||
     (cinemaState?.type === "url" && !!cinemaState.url) ||
     (cinemaState?.type === "local" && !!localVideoUrl);
@@ -641,10 +995,26 @@ export default function CinemaModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
       <div
         ref={containerRef}
-        className="relative w-full max-w-4xl h-[650px] max-h-[92vh] flex flex-col rounded-3xl bg-panel-deep border border-outline shadow-2xl overflow-hidden"
+        className="relative w-full max-w-5xl h-[680px] max-h-[94vh] flex flex-col rounded-3xl bg-panel-deep border border-outline shadow-2xl overflow-hidden"
       >
+        {/* Floating Reactions across the screen */}
+        <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
+          {floatingReactions.map((rx) => (
+            <div
+              key={rx.id}
+              className="absolute bottom-16 text-4xl animate-bounce drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]"
+              style={{
+                left: `${rx.x}%`,
+                animation: "miniChatBubble 2.5s ease-out forwards",
+              }}
+            >
+              <span>{rx.emoji}</span>
+            </div>
+          ))}
+        </div>
+
         {/* 1. Modal Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-outline bg-panel/80 shrink-0">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-outline bg-panel/90 shrink-0 z-20">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400 border border-purple-400/30 shadow-sm">
               <Film size={18} className="drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
@@ -654,22 +1024,57 @@ export default function CinemaModal({
                 <h2 className="text-sm sm:text-base font-extrabold text-on-surface leading-tight">
                   سینما روم (Watch Together)
                 </h2>
-                {cinemaState?.status !== "idle" && (
+                {cinemaState?.type === "stream" ? (
+                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+                    <Radio size={11} className="text-rose-400" />
+                    <span>پخش زنده فعال (LIVE)</span>
+                  </span>
+                ) : cinemaState?.status !== "idle" && (
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     <Radio size={10} className="animate-pulse" />
                     <span>همگام با اتاق ({roomName})</span>
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-muted truncate max-w-[240px] sm:max-w-md">
+              <p className="text-[11px] text-muted truncate max-w-[200px] sm:max-w-md">
                 {cinemaState?.title
-                  ? `در حال پخش: ${cinemaState.title}`
-                  : "پخش همزمان ویدیو با افراد روم"}
+                  ? cinemaState.title
+                  : "پخش همزمان و لایو استریم فیلم با افراد روم"}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Quick Reactions Bar */}
+            <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-outline rounded-2xl px-2 py-1">
+              {CINEMA_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => sendReaction(emoji)}
+                  className="hover:scale-125 active:scale-95 text-sm p-1 transition-transform"
+                  title={`ارسال ری‌اکشن ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+
+            {/* In-Cinema Chat Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowCinemaChat((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                showCinemaChat
+                  ? "bg-accent text-panel-deep shadow-sm"
+                  : "bg-panel text-muted hover:text-white border-outline"
+              }`}
+              title="گفتگو و چت همزمان در سینما"
+            >
+              <MessageSquare size={14} />
+              <span className="hidden sm:inline">چت زنده</span>
+            </button>
+
             {/* Host Only Toggle */}
             {isRoomOwner && (
               <button
@@ -684,7 +1089,7 @@ export default function CinemaModal({
               >
                 {cinemaState?.hostOnly ? <Lock size={13} /> : <Unlock size={13} />}
                 <span className="hidden sm:inline">
-                  {cinemaState?.hostOnly ? "کنترل: فقط میزبان" : "کنترل: آزاد"}
+                  {cinemaState?.hostOnly ? "فقط میزبان" : "آزاد"}
                 </span>
               </button>
             )}
@@ -702,533 +1107,720 @@ export default function CinemaModal({
           </div>
         </div>
 
-        {/* 2. Main Theater / Source Setup Content */}
-        <div className="flex-1 min-h-0 bg-black flex flex-col relative overflow-hidden">
+        {/* 2. Main Player Body with Optional Live Chat Drawer */}
+        <div className="flex-1 min-h-0 bg-black flex relative overflow-hidden">
           {/* Action Notice Overlay Toast */}
           {lastActionNotice && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-3.5 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/20 text-xs text-white font-bold animate-fade-in shadow-lg">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-xl bg-black/85 backdrop-blur-md border border-white/20 text-xs text-white font-bold animate-fade-in shadow-xl">
               {lastActionNotice}
             </div>
           )}
 
-          {/* A. Playable Video Source (YouTube or HTML5) */}
-          {hasVideoSource ? (
-            <div className="relative flex-1 w-full h-full flex flex-col justify-center items-center bg-black group">
-              {/* YouTube IFrame Player */}
-              {cinemaState?.type === "youtube" ? (
-                <div className="w-full h-full relative flex items-center justify-center bg-black">
-                  <div ref={ytMountContainerRef} className="w-full h-full" />
-                </div>
-              ) : (
-                /* Native HTML5 Video Player */
-                <video
-                  ref={videoRef}
-                  src={cinemaState?.type === "url" ? cinemaState.url : localVideoUrl || undefined}
-                  className="w-full h-full object-contain"
-                  onTimeUpdate={() => {
-                    if (videoRef.current && !isSeekingRef.current) {
-                      setLocalProgress(videoRef.current.currentTime);
-                    }
-                  }}
-                  onLoadedMetadata={() => {
-                    if (videoRef.current) {
-                      setDuration(videoRef.current.duration || 0);
-                    }
-                  }}
-                  onEnded={() => {
-                    if (canControl) {
-                      socket?.emit("cinema_pause", { roomId, currentTime: duration });
-                    }
-                  }}
-                  playsInline
-                >
-                  {subtitleUrl && subtitleEnabled && (
-                    <track
-                      default
-                      kind="subtitles"
-                      src={subtitleUrl}
-                      srcLang="fa"
-                      label="زیرنویس فارسی"
-                    />
-                  )}
-                </video>
-              )}
+          {/* Left/Center Area: Video Theater */}
+          <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-black">
+            {/* Floating Chat Bubbles on Video */}
+            {chatOverlayBubbles.length > 0 && !showCinemaChat && (
+              <div className="absolute bottom-20 right-4 z-30 flex flex-col gap-2 max-w-xs pointer-events-none">
+                {chatOverlayBubbles.map((b) => (
+                  <div
+                    key={b.id}
+                    className="animate-mini-chat-bubble rounded-2xl bg-black/75 backdrop-blur-md border border-white/15 px-3 py-1.5 text-xs text-white shadow-lg"
+                  >
+                    <span className="font-bold text-accent text-[11px] block">{b.user}:</span>
+                    <span className="text-[13px]">{b.content}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
-              {/* Player Overlay Controls */}
-              <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4 bg-gradient-to-t from-black/90 via-black/60 to-transparent flex flex-col gap-2 transition-opacity duration-300 opacity-95 group-hover:opacity-100 z-20">
-                {/* Timeline Scrubber (Only for local & direct HTML5 videos, YouTube has native controls inside iframe) */}
-                {cinemaState?.type !== "youtube" && (
-                  <div className="flex items-center gap-2 w-full">
-                    <span className="text-[11px] font-mono text-slate-300 min-w-[42px] text-left">
-                      {formatTime(localProgress)}
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration || 100}
-                      step={0.1}
-                      value={localProgress}
-                      disabled={!canControl}
-                      onMouseDown={() => {
-                        isSeekingRef.current = true;
-                      }}
-                      onTouchStart={() => {
-                        isSeekingRef.current = true;
-                      }}
-                      onChange={(e) => {
-                        setLocalProgress(Number(e.target.value));
-                      }}
-                      onMouseUp={(e) => {
-                        isSeekingRef.current = false;
-                        handleSeek(Number((e.target as HTMLInputElement).value));
-                      }}
-                      onTouchEnd={(e) => {
-                        isSeekingRef.current = false;
-                        handleSeek(Number((e.target as HTMLInputElement).value));
-                      }}
-                      className={`flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20 hover:bg-white/30 transition-all ${
-                        !canControl ? "opacity-50 cursor-not-allowed" : ""
-                      }`}
-                    />
-                    <span className="text-[11px] font-mono text-slate-400 min-w-[42px] text-right">
-                      {formatTime(duration)}
+            {/* Floating Live Reactions */}
+            {floatingReactions.length > 0 && (
+              <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+                {floatingReactions.map((rx) => (
+                  <div
+                    key={rx.id}
+                    className="absolute bottom-16 animate-float-reaction flex flex-col items-center pointer-events-none"
+                    style={{ left: `${rx.x}%` }}
+                  >
+                    <span className="text-3xl select-none filter drop-shadow-lg">{rx.emoji}</span>
+                    <span className="text-[9px] bg-black/60 px-1.5 py-0.5 rounded-full text-white/90 font-bold backdrop-blur mt-0.5">
+                      {rx.user}
                     </span>
                   </div>
-                )}
+                ))}
+              </div>
+            )}
 
-                {/* Bottom Bar Controls */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={togglePlay}
-                      disabled={!canControl}
-                      className={`flex h-9 w-9 items-center justify-center rounded-xl transition-all shadow-md active:scale-95 ${
-                        cinemaState?.status === "playing"
-                          ? "bg-amber-500 hover:bg-amber-400 text-panel-deep"
-                          : "bg-accent hover:brightness-110 text-panel-deep"
-                      } ${!canControl ? "opacity-50 cursor-not-allowed" : ""}`}
-                      title={!canControl ? "فقط میزبان اجازه تغییر دارد" : "پخش / توقف"}
-                    >
-                      {cinemaState?.status === "playing" ? (
-                        <Pause size={18} fill="currentColor" />
-                      ) : (
-                        <Play size={18} fill="currentColor" className="translate-x-0.5" />
-                      )}
-                    </button>
+            {/* A. Playable Source (Stream, YouTube, or HTML5) */}
+            {hasVideoSource ? (
+              <div className="relative flex-1 w-full h-full flex flex-col justify-center items-center bg-black group">
+                {/* 1. WebRTC Screen Share Live Stream Player */}
+                {cinemaState?.type === "stream" || isScreenSharing ? (
+                  <div className="w-full h-full relative flex items-center justify-center bg-black">
+                    <video
+                      ref={bindStreamVideo}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-contain bg-black"
+                    />
 
-                    {/* Volume (for HTML5) */}
-                    {cinemaState?.type !== "youtube" && (
-                      <div className="flex items-center gap-1.5 bg-white/10 px-2 py-1 rounded-xl">
+                    {/* Streamer Banner */}
+                    {isStreamer && (
+                      <div className="absolute top-3 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-600/90 text-white text-xs font-bold shadow-lg backdrop-blur">
+                        <Radio size={14} className="animate-pulse" />
+                        <span>شما در حال پخش فیلم هستید</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            const nextMute = !isMuted;
-                            setIsMuted(nextMute);
-                            if (videoRef.current) videoRef.current.muted = nextMute;
-                          }}
-                          className="text-slate-300 hover:text-white"
+                          onClick={handleStopScreenShare}
+                          className="mr-2 rounded-lg bg-black/40 hover:bg-black/60 px-2 py-0.5 text-[11px] transition-all"
                         >
-                          {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                          توقف
                         </button>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={isMuted ? 0 : volume}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setVolume(val);
-                            setIsMuted(false);
-                            if (videoRef.current) {
-                              videoRef.current.volume = val;
-                              videoRef.current.muted = false;
-                            }
-                          }}
-                          className="w-14 sm:w-20 h-1 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20"
-                        />
                       </div>
                     )}
 
-                    {cinemaState?.type === "youtube" && (
-                      <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-red-600/20 text-red-400 border border-red-500/30 text-xs font-bold">
-                        <YouTubeIcon size={14} />
-                        <span>پخش یوتیوب همگام</span>
-                      </span>
-                    )}
-
-                    {/* Subtitle Toggle */}
-                    {subtitleUrl && cinemaState?.type !== "youtube" && (
-                      <button
-                        type="button"
-                        onClick={() => setSubtitleEnabled((prev) => !prev)}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold transition-all border ${
-                          subtitleEnabled
-                            ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
-                            : "bg-white/5 text-muted border-white/10"
-                        }`}
-                      >
-                        <Subtitles size={14} />
-                        <span className="hidden sm:inline">زیرنویس</span>
-                      </button>
+                    {/* Viewer Banner */}
+                    {isViewingLiveStream && (
+                      <div className="absolute top-3 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/70 text-slate-200 border border-white/10 text-xs font-bold backdrop-blur">
+                        <Radio size={14} className="text-rose-400 animate-pulse" />
+                        <span>پخش زنده: {cinemaState.streamerName || "میزبان"}</span>
+                        {streamConnecting && (
+                          <span className="text-amber-400 text-[10px]">(در حال اتصال...)</span>
+                        )}
+                      </div>
                     )}
                   </div>
-
-                  {/* Right side controls */}
-                  <div className="flex items-center gap-2">
-                    {/* Add Subtitle Button (HTML5 only) */}
-                    {cinemaState?.type !== "youtube" && (
-                      <label className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 cursor-pointer transition-all">
-                        <Subtitles size={14} />
-                        <span className="hidden sm:inline">
-                          {subtitleFile ? subtitleFile.name : "افزودن زیرنویس (.srt)"}
-                        </span>
-                        <input
-                          type="file"
-                          accept=".srt,.vtt"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleSelectSubtitle(file);
-                          }}
-                        />
-                      </label>
-                    )}
-
-                    {/* Change Source Button */}
-                    {canControl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          sounds.playPop();
-                          if (ytPlayerRef.current) {
-                            try {
-                              ytPlayerRef.current.destroy();
-                            } catch (_) {}
-                            ytPlayerRef.current = null;
-                            currentVideoIdRef.current = null;
-                          }
-                          if (ytMountContainerRef.current) {
-                            ytMountContainerRef.current.innerHTML = "";
-                          }
-                          socket?.emit("cinema_set_source", {
-                            roomId,
-                            type: "none",
-                            url: "",
-                            title: "",
-                          });
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-all"
-                        title="تغییر فیلم"
-                      >
-                        <RefreshCw size={13} />
-                        <span className="hidden sm:inline">تغییر فیلم</span>
-                      </button>
-                    )}
-
-                    {/* Fullscreen Button */}
-                    <button
-                      type="button"
-                      onClick={toggleFullscreen}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all"
-                      title={isFullscreen ? "خروج از تمام‌صفحه" : "تمام‌صفحه"}
-                    >
-                      {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    </button>
+                ) : cinemaState?.type === "youtube" ? (
+                  /* 2. YouTube IFrame Player */
+                  <div className="w-full h-full relative flex items-center justify-center bg-black">
+                    <div ref={ytMountContainerRef} className="w-full h-full" />
                   </div>
-                </div>
-              </div>
-            </div>
-          ) : isLocalWaitingForFile ? (
-            /* B. Waiting for Local File Selection */
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 max-w-md mx-auto">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-400/30">
-                <FileVideo size={32} />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-extrabold text-on-surface">
-                  فیلم با حالت فایل محلی آغاز شده است!
-                </h3>
-                <p className="text-xs text-muted">
-                  میزبان فیلم <strong className="text-accent">{cinemaState.title}</strong> را برای
-                  پخش سینک انتخاب کرده است.
-                </p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-panel-soft/60 border border-outline text-right text-[11px] text-muted space-y-1 w-full">
-                <div className="flex items-center gap-1.5 font-bold text-slate-300">
-                  <Info size={14} className="text-accent" />
-                  <span>راهنمایی پخش سینک (Syncplay):</span>
-                </div>
-                <p>
-                  فایل فیلم مورد نظر را از کامپیوتر خود انتخاب کنید تا مرورگر فوراً با سایر اعضا
-                  هماهنگ شود. هیچ فایلی از اینترنت شما آپلود نمی‌شود.
-                </p>
-              </div>
-
-              <label className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-accent hover:brightness-110 text-panel-deep font-black text-xs cursor-pointer shadow-lg transition-all active:scale-95">
-                <Upload size={16} />
-                <span>انتخاب فایل فیلم از سیستم</span>
-                <input
-                  type="file"
-                  accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.mkv"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleSelectLocalVideo(file);
-                  }}
-                />
-              </label>
-            </div>
-          ) : (
-            /* C. Setup Tabs: YouTube, Local File, Direct URL */
-            <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-y-auto max-w-xl mx-auto w-full justify-center">
-              <div className="text-center space-y-1.5 mb-5">
-                <h3 className="text-base sm:text-lg font-extrabold text-on-surface">
-                  آماده‌سازی سینما روم
-                </h3>
-                <p className="text-xs text-muted">منبع ویدیوی مورد نظر خود را انتخاب کنید:</p>
-              </div>
-
-              {/* 3 Tabs: YouTube, Local File, Direct URL */}
-              <div className="grid grid-cols-3 p-1 rounded-2xl bg-panel-soft border border-outline mb-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    sounds.playPop();
-                    setActiveTab("youtube");
-                  }}
-                  className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                    activeTab === "youtube"
-                      ? "bg-red-600 text-white shadow-sm"
-                      : "text-muted hover:text-white"
-                  }`}
-                >
-                  <YouTubeIcon size={15} />
-                  <span>یوتیوب (YouTube)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    sounds.playPop();
-                    setActiveTab("local");
-                  }}
-                  className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                    activeTab === "local"
-                      ? "bg-accent text-panel-deep shadow-sm"
-                      : "text-muted hover:text-white"
-                  }`}
-                >
-                  <Upload size={14} />
-                  <span>فایل محلی</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    sounds.playPop();
-                    setActiveTab("url");
-                  }}
-                  className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                    activeTab === "url"
-                      ? "bg-accent text-panel-deep shadow-sm"
-                      : "text-muted hover:text-white"
-                  }`}
-                >
-                  <LinkIcon size={14} />
-                  <span>لینک مستقیم MP4</span>
-                </button>
-              </div>
-
-              {/* Tab 1: YouTube */}
-              {activeTab === "youtube" && (
-                <div className="space-y-4 animate-fade-in">
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSetUrlSource(inputUrl, inputTitle);
+                ) : (
+                  /* 3. Native HTML5 Video Player */
+                  <video
+                    ref={videoRef}
+                    src={cinemaState?.type === "url" ? cinemaState.url : localVideoUrl || undefined}
+                    className="w-full h-full object-contain"
+                    onTimeUpdate={() => {
+                      if (videoRef.current && !isSeekingRef.current) {
+                        setLocalProgress(videoRef.current.currentTime);
+                      }
                     }}
-                    className="space-y-4"
+                    onLoadedMetadata={() => {
+                      if (videoRef.current) {
+                        setDuration(videoRef.current.duration || 0);
+                      }
+                    }}
+                    onEnded={() => {
+                      if (canControl) {
+                        socket?.emit("cinema_pause", { roomId, currentTime: duration });
+                      }
+                    }}
+                    playsInline
                   >
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300 block text-right">
-                        لینک ویدیوی یوتیوب (یا شناسه ۱۱ رقمی ویدیو):
-                      </label>
-                      <input
-                        type="text"
-                        dir="ltr"
-                        placeholder="https://www.youtube.com/watch?v=... یا https://youtu.be/... یا 3J5g3oSJAQ0"
-                        value={inputUrl}
-                        onChange={(e) => setInputUrl(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSetUrlSource(inputUrl, inputTitle);
-                          }
-                        }}
-                        className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
+                    {subtitleUrl && subtitleEnabled && (
+                      <track
+                        default
+                        kind="subtitles"
+                        src={subtitleUrl}
+                        srcLang="fa"
+                        label="زیرنویس فارسی"
                       />
-                    </div>
+                    )}
+                  </video>
+                )}
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-300 block text-right">
-                        عنوان ویدیو (اختیاری):
-                      </label>
+                {/* Player Bottom Control Bar */}
+                <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-2 transition-opacity duration-300 opacity-95 group-hover:opacity-100 z-20">
+                  {/* Timeline (HTML5 direct / local only) */}
+                  {cinemaState?.type !== "youtube" && cinemaState?.type !== "stream" && (
+                    <div className="flex items-center gap-3 w-full">
+                      <span className="text-[11px] font-mono text-slate-300 min-w-[40px] text-left">
+                        {formatTime(localProgress)}
+                      </span>
                       <input
-                        type="text"
-                        placeholder="مثلاً: موزیک ویدیو جدید یا فیلم تستی"
-                        value={inputTitle}
-                        onChange={(e) => setInputTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSetUrlSource(inputUrl, inputTitle);
-                          }
+                        type="range"
+                        min={0}
+                        max={duration || 100}
+                        step={0.5}
+                        disabled={!canControl}
+                        value={localProgress}
+                        onMouseDown={() => (isSeekingRef.current = true)}
+                        onMouseUp={(e) => {
+                          isSeekingRef.current = false;
+                          handleSeek(Number((e.target as HTMLInputElement).value));
                         }}
-                        className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
+                        onTouchStart={() => (isSeekingRef.current = true)}
+                        onTouchEnd={(e) => {
+                          isSeekingRef.current = false;
+                          handleSeek(Number((e.target as HTMLInputElement).value));
+                        }}
+                        onChange={(e) => setLocalProgress(Number(e.target.value))}
+                        className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20 focus:outline-none"
                       />
+                      <span className="text-[11px] font-mono text-slate-400 min-w-[40px] text-right">
+                        {formatTime(duration)}
+                      </span>
                     </div>
+                  )}
 
-                    <button
-                      type="submit"
-                      disabled={!inputUrl.trim()}
-                      className="w-full py-2.5 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-black text-xs shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <YouTubeIcon size={16} />
-                      <span>شروع پخش همزمان یوتیوب در روم</span>
-                    </button>
-                  </form>
-
-                  {/* Preset YouTube Demos */}
-                  <div className="pt-2 border-t border-outline/50 space-y-1.5">
-                    <span className="text-[10px] font-bold text-muted block text-right">
-                      یا یکی از ویدیوهای تستی یوتیوب را امتحان کنید:
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {PRESET_DEMO_YOUTUBE.map((demo, idx) => (
+                  {/* Controls row */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      {/* Play/Pause for non-stream */}
+                      {cinemaState?.type !== "stream" ? (
                         <button
-                          key={idx}
+                          type="button"
+                          onClick={togglePlay}
+                          disabled={!canControl}
+                          className={`flex h-9 w-9 items-center justify-center rounded-xl transition-all shadow-md active:scale-95 ${
+                            cinemaState?.status === "playing"
+                              ? "bg-amber-500 hover:bg-amber-400 text-panel-deep"
+                              : "bg-accent hover:brightness-110 text-panel-deep"
+                          } ${!canControl ? "opacity-50 cursor-not-allowed" : ""}`}
+                          title="پخش / توقف"
+                        >
+                          {cinemaState?.status === "playing" ? (
+                            <Pause size={18} fill="currentColor" />
+                          ) : (
+                            <Play size={18} fill="currentColor" className="translate-x-0.5" />
+                          )}
+                        </button>
+                      ) : (
+                        /* Stream Status Badge */
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold">
+                          <Radio size={13} className="animate-pulse" />
+                          <span>پخش زنده بدون تأخیر</span>
+                        </div>
+                      )}
+
+                      {/* Volume Slider */}
+                      {cinemaState?.type !== "youtube" && (
+                        <div className="flex items-center gap-1.5 bg-white/10 px-2 py-1 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextMute = !isMuted;
+                              setIsMuted(nextMute);
+                              if (streamVideoRef.current) streamVideoRef.current.muted = nextMute;
+                              if (videoRef.current) videoRef.current.muted = nextMute;
+                            }}
+                            className="text-slate-300 hover:text-white"
+                          >
+                            {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                          </button>
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={isMuted ? 0 : volume}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setVolume(val);
+                              setIsMuted(false);
+                              if (streamVideoRef.current) {
+                                streamVideoRef.current.volume = val;
+                                streamVideoRef.current.muted = false;
+                              }
+                              if (videoRef.current) {
+                                videoRef.current.volume = val;
+                                videoRef.current.muted = false;
+                              }
+                            }}
+                            className="w-14 sm:w-20 h-1 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20"
+                          />
+                        </div>
+                      )}
+
+                      {/* Mobile Reactions */}
+                      <div className="flex sm:hidden items-center gap-1">
+                        {["🍿", "❤️", "🔥"].map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => sendReaction(emoji)}
+                            className="text-sm p-1"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right side controls */}
+                    <div className="flex items-center gap-2">
+                      {/* Subtitle (HTML5 only) */}
+                      {subtitleUrl && cinemaState?.type !== "youtube" && cinemaState?.type !== "stream" && (
+                        <button
+                          type="button"
+                          onClick={() => setSubtitleEnabled((prev) => !prev)}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold transition-all border ${
+                            subtitleEnabled
+                              ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                              : "bg-white/5 text-muted border-white/10"
+                          }`}
+                        >
+                          <Subtitles size={14} />
+                          <span className="hidden sm:inline">زیرنویس</span>
+                        </button>
+                      )}
+
+                      {/* Change Video / Source */}
+                      {canControl && (
+                        <button
                           type="button"
                           onClick={() => {
-                            setInputUrl(demo.url);
-                            setInputTitle(demo.title);
-                            handleSetUrlSource(demo.url, demo.title);
+                            sounds.playPop();
+                            if (cinemaState?.type === "stream") {
+                              handleStopScreenShare();
+                            } else {
+                              if (ytPlayerRef.current) {
+                                try {
+                                  ytPlayerRef.current.destroy();
+                                } catch (_) {}
+                                ytPlayerRef.current = null;
+                                currentVideoIdRef.current = null;
+                              }
+                              if (ytMountContainerRef.current) {
+                                ytMountContainerRef.current.innerHTML = "";
+                              }
+                              socket?.emit("cinema_set_source", {
+                                roomId,
+                                type: "none",
+                                url: "",
+                                title: "",
+                              });
+                            }
                           }}
-                          className="flex items-center justify-between p-2 rounded-xl bg-panel-soft hover:bg-white/10 border border-outline text-right text-[11px] font-bold text-slate-300 transition-all"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition-all"
+                          title="تغییر فیلم"
                         >
-                          <span className="truncate">{demo.title}</span>
-                          <Play size={12} className="text-red-400 shrink-0 mr-1" />
+                          <RefreshCw size={13} />
+                          <span className="hidden sm:inline">تغییر فیلم</span>
                         </button>
-                      ))}
+                      )}
+
+                      {/* Fullscreen Button */}
+                      <button
+                        type="button"
+                        onClick={toggleFullscreen}
+                        className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all"
+                        title="تمام‌صفحه"
+                      >
+                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                      </button>
                     </div>
                   </div>
                 </div>
-              )}
-
-              {/* Tab 2: Local File */}
-              {activeTab === "local" && (
-                <div className="space-y-4 animate-fade-in">
-                  <div className="p-3.5 rounded-2xl bg-panel-soft/40 border border-outline text-right text-[11px] text-muted space-y-1.5">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-200">
-                      <Sparkles size={14} className="text-amber-400" />
-                      <span>چرا فایل محلی بهترین انتخاب است؟</span>
-                    </div>
-                    <p>
-                      هر کس همان فیلمی که روی کامپیوتر دارد را در پلیر انتخاب می‌کند. فیلم مستقیماً از
-                      روی هارد با کیفیت 4K/1080p و بدون صفر ثانیه بافرینگ یا مصرف اینترنت سرور پخش شده
-                      و ثانیه‌ها با هم سینک می‌شوند.
+              </div>
+            ) : isLocalWaitingForFile ? (
+              /* B. Waiting for Local File (Syncplay mode) */
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 max-w-md mx-auto">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-400/30">
+                  <FileVideo size={32} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-extrabold text-on-surface">
+                    فیلم با حالت فایل محلی آغاز شده است
+                  </h3>
+                  <p className="text-xs text-muted">
+                    میزبان فیلم <strong className="text-accent">{cinemaState.title}</strong> را برای
+                    پخش سینک انتخاب کرده است.
+                  </p>
+                </div>
+                <label className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-accent hover:brightness-110 text-panel-deep font-black text-xs cursor-pointer shadow-lg transition-all active:scale-95">
+                  <Upload size={16} />
+                  <span>انتخاب این فایل از روی کامپیوتر</span>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.mkv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleSelectLocalVideo(file);
+                    }}
+                  />
+                </label>
+              </div>
+            ) : (
+              /* C. Source Setup Screen */
+              <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 overflow-y-auto">
+                <div className="w-full max-w-xl space-y-5 my-auto">
+                  {/* Setup Heading */}
+                  <div className="text-center space-y-1">
+                    <h3 className="text-base sm:text-lg font-black text-on-surface">
+                      انتخاب نحوه پخش فیلم
+                    </h3>
+                    <p className="text-xs text-muted">
+                      می‌توانید فیلم را مستقیماً از سیستم استریم کنید، از یوتیوب بگذارید یا لینک مستقیم بدهید.
                     </p>
                   </div>
 
-                  <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-outline hover:border-accent/60 rounded-3xl bg-panel/40 hover:bg-panel/70 cursor-pointer transition-all group">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent mb-2 group-hover:scale-110 transition-transform">
-                      <Upload size={22} />
-                    </div>
-                    <span className="text-xs font-bold text-on-surface">
-                      کلیک کنید یا فایل فیلم را اینجا بکشید
-                    </span>
-                    <span className="text-[10px] text-muted mt-1">
-                      فرمت‌های پشتیبانی شده: MP4, WebM, MKV
-                    </span>
-                    <input
-                      type="file"
-                      accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.mkv"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleSelectLocalVideo(file);
+                  {/* Mode Tabs */}
+                  <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-panel border border-outline">
+                    {/* Tab 1: Live Stream (Screen Share) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playPop();
+                        setActiveTab("stream");
                       }}
-                    />
-                  </label>
-                </div>
-              )}
+                      className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-black transition-all ${
+                        activeTab === "stream"
+                          ? "bg-rose-600 text-white shadow-md ring-1 ring-rose-400/50"
+                          : "text-muted hover:text-white"
+                      }`}
+                    >
+                      <Radio size={14} className={activeTab === "stream" ? "animate-pulse" : ""} />
+                      <span>پخش زنده (شیر فیلم)</span>
+                    </button>
 
-              {/* Tab 3: Direct URL */}
-              {activeTab === "url" && (
-                <div className="space-y-4 animate-fade-in">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300 block text-right">
-                      لینک مستقیم فایل ویدیو (MP4 / WebM / M3U8):
-                    </label>
-                    <input
-                      type="url"
-                      dir="ltr"
-                      placeholder="https://example.com/movie.mp4"
-                      value={inputUrl}
-                      onChange={(e) => setInputUrl(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-accent"
-                    />
+                    {/* Tab 2: YouTube */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playPop();
+                        setActiveTab("youtube");
+                      }}
+                      className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "youtube"
+                          ? "bg-red-600 text-white shadow-sm"
+                          : "text-muted hover:text-white"
+                      }`}
+                    >
+                      <YouTubeIcon size={14} />
+                      <span>یوتیوب</span>
+                    </button>
+
+                    {/* Tab 3: Direct URL */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playPop();
+                        setActiveTab("url");
+                      }}
+                      className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "url"
+                          ? "bg-accent text-panel-deep shadow-sm"
+                          : "text-muted hover:text-white"
+                      }`}
+                    >
+                      <LinkIcon size={13} />
+                      <span>لینک مستقیم</span>
+                    </button>
+
+                    {/* Tab 4: Local File */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playPop();
+                        setActiveTab("local");
+                      }}
+                      className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                        activeTab === "local"
+                          ? "bg-accent text-panel-deep shadow-sm"
+                          : "text-muted hover:text-white"
+                      }`}
+                    >
+                      <Upload size={13} />
+                      <span>فایل محلی</span>
+                    </button>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300 block text-right">
-                      نام فیلم (اختیاری):
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="مثلاً: فیلم سینمایی شوالیه‌تاریکی"
-                      value={inputTitle}
-                      onChange={(e) => setInputTitle(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-accent"
-                    />
-                  </div>
+                  {/* TAB 1: Live Stream / Screen Share */}
+                  {activeTab === "stream" && (
+                    <div className="space-y-4 animate-fade-in p-5 rounded-3xl bg-panel-soft/60 border border-rose-500/30 text-center">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 mx-auto">
+                        <Tv size={28} className="animate-pulse" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-extrabold text-on-surface">
+                          پخش زنده فیلم یا پنجره پلیر (Screen Share با صدا)
+                        </h4>
+                        <p className="text-xs text-muted leading-relaxed max-w-md mx-auto">
+                          فیلم را در نرم‌افزار دلخواهتان (مثل VLC، کروم، KMPlayer یا PotPlayer) پخش کنید و با زدن دکمه زیر، پنجره فیلم را با صدای کامل برای تمام اعضای روم استریم کنید.
+                        </p>
+                      </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleSetUrlSource(inputUrl, inputTitle)}
-                    disabled={!inputUrl.trim()}
-                    className="w-full py-2.5 rounded-2xl bg-accent hover:brightness-110 disabled:opacity-40 text-panel-deep font-black text-xs shadow-lg transition-all active:scale-95"
-                  >
-                    شروع پخش همزمان در روم
-                  </button>
+                      <div className="p-3 rounded-2xl bg-panel-deep/80 border border-outline text-right text-[11px] text-muted space-y-1 max-w-md mx-auto">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                          <Sparkles size={13} />
+                          <span>نکته مهم برای صدای فیلم:</span>
+                        </div>
+                        <p>
+                          هنگام انتخاب پنجره یا تب مرورگر، گزینه «اشتراک صدا (Share Audio / Also share system audio)» را تیک بزنید تا صدای فیلم هم برای بقیه پخش شود.
+                        </p>
+                      </div>
 
-                  {/* Preset Demo Videos */}
-                  <div className="pt-2 border-t border-outline/50 space-y-1.5">
-                    <span className="text-[10px] font-bold text-muted block text-right">
-                      ویدیوهای تستی لینک مستقیم:
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {PRESET_DEMO_DIRECT.map((demo, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => {
-                            setInputUrl(demo.url);
-                            setInputTitle(demo.title);
-                            handleSetUrlSource(demo.url, demo.title);
-                          }}
-                          className="flex items-center justify-between p-2 rounded-xl bg-panel-soft hover:bg-white/10 border border-outline text-right text-[11px] font-bold text-slate-300 transition-all"
-                        >
-                          <span className="truncate">{demo.title}</span>
-                          <Play size={12} className="text-accent shrink-0 mr-1" />
-                        </button>
-                      ))}
+                      <button
+                        type="button"
+                        onClick={handleStartScreenShare}
+                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-600 to-rose-500 hover:brightness-110 text-white font-black text-xs shadow-xl shadow-rose-600/30 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Radio size={16} className="animate-pulse" />
+                        <span>شروع اشتراک‌گذاری و پخش زنده فیلم برای اتاق</span>
+                      </button>
                     </div>
-                  </div>
+                  )}
+
+                  {/* TAB 2: YouTube */}
+                  {activeTab === "youtube" && (
+                    <div className="space-y-4 animate-fade-in">
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handleSetUrlSource(inputUrl, inputTitle);
+                        }}
+                        className="space-y-3.5"
+                      >
+                        <div className="space-y-1 text-right">
+                          <label className="text-xs font-bold text-slate-300">
+                            لینک ویدیوی یوتیوب:
+                          </label>
+                          <input
+                            type="text"
+                            dir="ltr"
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            value={inputUrl}
+                            onChange={(e) => setInputUrl(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1 text-right">
+                          <label className="text-xs font-bold text-slate-300">
+                            عنوان ویدیو (اختیاری):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="مثلاً: انیمیشن یا موزیک ویدیو"
+                            value={inputTitle}
+                            onChange={(e) => setInputTitle(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!inputUrl.trim()}
+                          className="w-full py-2.5 rounded-2xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white font-black text-xs shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
+                          <YouTubeIcon size={16} />
+                          <span>شروع پخش همزمان یوتیوب</span>
+                        </button>
+                      </form>
+
+                      {/* Preset YouTube Demos */}
+                      <div className="pt-2 border-t border-outline/50 space-y-1.5">
+                        <span className="text-[10px] font-bold text-muted block text-right">
+                          ویدیوهای تستی یوتیوب:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {PRESET_DEMO_YOUTUBE.map((demo, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setInputUrl(demo.url);
+                                setInputTitle(demo.title);
+                                handleSetUrlSource(demo.url, demo.title);
+                              }}
+                              className="flex items-center justify-between p-2 rounded-xl bg-panel-soft hover:bg-white/10 border border-outline text-right text-[11px] font-bold text-slate-300 transition-all"
+                            >
+                              <span className="truncate">{demo.title}</span>
+                              <Play size={12} className="text-red-400 shrink-0 mr-1" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: Direct URL */}
+                  {activeTab === "url" && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="space-y-1 text-right">
+                        <label className="text-xs font-bold text-slate-300">
+                          لینک مستقیم فایل ویدیو (MP4 / WebM):
+                        </label>
+                        <input
+                          type="url"
+                          dir="ltr"
+                          placeholder="https://example.com/movie.mp4"
+                          value={inputUrl}
+                          onChange={(e) => setInputUrl(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-accent"
+                        />
+                      </div>
+
+                      <div className="space-y-1 text-right">
+                        <label className="text-xs font-bold text-slate-300">
+                          نام فیلم (اختیاری):
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً: فیلم سینمایی تستی"
+                          value={inputTitle}
+                          onChange={(e) => setInputTitle(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-2xl bg-panel border border-outline text-xs text-white placeholder-muted focus:outline-none focus:border-accent"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSetUrlSource(inputUrl, inputTitle)}
+                        disabled={!inputUrl.trim()}
+                        className="w-full py-2.5 rounded-2xl bg-accent hover:brightness-110 disabled:opacity-40 text-panel-deep font-black text-xs shadow-lg transition-all active:scale-95"
+                      >
+                        شروع پخش همزمان در روم
+                      </button>
+
+                      {/* Preset Direct Demos */}
+                      <div className="pt-2 border-t border-outline/50 space-y-1.5">
+                        <span className="text-[10px] font-bold text-muted block text-right">
+                          ویدیوهای تستی لینک مستقیم:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {PRESET_DEMO_DIRECT.map((demo, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setInputUrl(demo.url);
+                                setInputTitle(demo.title);
+                                handleSetUrlSource(demo.url, demo.title);
+                              }}
+                              className="flex items-center justify-between p-2 rounded-xl bg-panel-soft hover:bg-white/10 border border-outline text-right text-[11px] font-bold text-slate-300 transition-all"
+                            >
+                              <span className="truncate">{demo.title}</span>
+                              <Play size={12} className="text-accent shrink-0 mr-1" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 4: Local File (Syncplay mode) */}
+                  {activeTab === "local" && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 rounded-2xl bg-panel-soft/40 border border-outline text-right text-[11px] text-muted space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-200">
+                          <Sparkles size={14} className="text-amber-400" />
+                          <span>سینک فایل مشترک (Syncplay):</span>
+                        </div>
+                        <p>
+                          اگر همه اعضا همین فایل فیلم را روی سیستم خود دارند، با انتخاب این گزینه فیلم بدون نیاز به اینترنتِ استریم و با حداکثر کیفیت ۴K همگام می‌شود.
+                        </p>
+                      </div>
+
+                      <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-outline hover:border-accent/60 rounded-3xl bg-panel/40 hover:bg-panel/70 cursor-pointer transition-all group">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent mb-2 group-hover:scale-110 transition-transform">
+                          <Upload size={22} />
+                        </div>
+                        <span className="text-xs font-bold text-on-surface">
+                          انتخاب فایل فیلم از روی کامپیوتر
+                        </span>
+                        <span className="text-[10px] text-muted mt-1">
+                          فرمت‌های MP4, MKV, WebM
+                        </span>
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,.mkv"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleSelectLocalVideo(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+            )}
+          </div>
+
+          {/* Right/Side Live Chat Drawer (Toggleable) */}
+          {showCinemaChat && (
+            <div className="w-80 border-r border-outline bg-panel-dim/95 flex flex-col shrink-0 animate-fade-in z-30">
+              {/* Chat Header */}
+              <div className="p-3 border-b border-outline flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={16} className="text-accent" />
+                  <span className="text-xs font-bold text-on-surface">چت زنده سینما</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCinemaChat(false)}
+                  className="p-1 rounded-lg text-muted hover:text-white hover:bg-white/5"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Chat Feed */}
+              <div
+                ref={chatScrollRef}
+                className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 custom-scrollbar text-right"
+              >
+                {roomMessages.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-muted/50">
+                    هنوز پیامی ارسال نشده است. در حین پخش فیلم نظر بدید!
+                  </div>
+                ) : (
+                  roomMessages.map((msg) => {
+                    const isMine = msg.userId === currentUserId;
+                    return msg.isSystem ? (
+                      <div key={msg.id} className="text-center my-1 text-[10px] text-muted/60">
+                        {msg.content}
+                      </div>
+                    ) : (
+                      <div
+                        key={msg.id}
+                        className={`flex flex-col ${isMine ? "items-start" : "items-end"}`}
+                      >
+                        {!isMine && (
+                          <span className="text-[10px] font-bold text-accent mb-0.5">
+                            {msg.user}
+                          </span>
+                        )}
+                        <div
+                          className={`px-3 py-1.5 rounded-2xl text-xs max-w-[90%] leading-relaxed break-words ${
+                            isMine
+                              ? "bg-accent text-panel-deep font-semibold rounded-bl-sm"
+                              : "bg-panel-soft border border-outline text-slate-100 rounded-br-sm"
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Chat Input */}
+              <form
+                onSubmit={handleSendCinemaMessage}
+                className="p-2.5 border-t border-outline bg-panel-deep flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  placeholder="نظرت چیه؟..."
+                  value={chatMessageText}
+                  onChange={(e) => setChatMessageText(e.target.value)}
+                  className="flex-1 h-9 rounded-xl bg-panel-soft border border-outline px-3 text-xs text-white placeholder-muted/50 focus:outline-none focus:border-accent"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatMessageText.trim()}
+                  className="h-9 w-9 flex items-center justify-center rounded-xl bg-accent text-panel-deep font-bold disabled:opacity-40 transition-all active:scale-95 shadow-sm"
+                >
+                  <Send size={14} className="rotate-180" />
+                </button>
+              </form>
             </div>
           )}
         </div>

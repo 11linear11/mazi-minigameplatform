@@ -72,42 +72,48 @@ export default function RoomList({
   }, [query, conversations]);
 
   return (
-    <aside className="flex h-full flex-col gap-3.5 overflow-hidden border-x border-outline bg-panel-soft p-4">
-      {/* Logo & title */}
-      <div className="relative shrink-0 pb-1">
-        <Image
-          src="/assets/images/logo.png"
-          alt="MazI"
-          width={200}
-          height={60}
-          priority
-          className="mx-auto w-2/3 rounded-xl object-cover"
-        />
-        {isAdmin && (
+    <aside className="flex h-full flex-col gap-3 overflow-hidden border-x border-outline bg-panel-dim/95 p-3.5 backdrop-blur-xl">
+      {/* Logo & header actions */}
+      <div className="relative shrink-0 pt-1 pb-1">
+        <div className="flex items-center justify-between px-1">
+          {isAdmin ? (
+            <button
+              onClick={onAdminGames}
+              title="مدیریت بازی‌ها"
+              className="flex h-8 w-8 items-center justify-center rounded-xl bg-panel-soft border border-outline text-muted hover:text-accent hover:border-accent/30 transition-all shadow-sm"
+            >
+              <Gamepad2 size={16} />
+            </button>
+          ) : <div className="w-8" />}
+
+          <div className="flex items-center justify-center">
+            <Image
+              src="/assets/images/logo.png"
+              alt="MazI"
+              width={140}
+              height={42}
+              priority
+              className="h-9 w-auto object-contain filter drop-shadow-[0_2px_10px_rgba(245,158,11,0.2)]"
+            />
+          </div>
+
           <button
-            onClick={onAdminGames}
-            title="مدیریت بازی‌ها"
-            className="absolute left-0 top-0 flex h-8 w-8 items-center justify-center rounded-lg bg-panel-deep text-muted hover:text-accent transition-colors"
+            onClick={onOpenLeaderboard}
+            title="جدول برترین‌ها (Leaderboard)"
+            className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 hover:text-amber-300 hover:bg-amber-500/20 transition-all shadow-sm border border-amber-400/30 hover:scale-105 active:scale-95"
           >
-            <Gamepad2 size={15} />
+            <Trophy size={16} className="drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
           </button>
-        )}
-        <button
-          onClick={onOpenLeaderboard}
-          title="جدول برترین‌ها (Leaderboard)"
-          className="absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-lg bg-panel-deep text-amber-400 hover:text-amber-300 hover:bg-amber-400/10 transition-colors shadow-sm border border-amber-400/30"
-        >
-          <Trophy size={16} className="drop-shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
-        </button>
+        </div>
       </div>
 
       {/* Mode Switcher: Rooms vs Direct Messages */}
-      <div className="flex items-center rounded-xl bg-panel-deep p-1 border border-outline shrink-0">
+      <div className="flex items-center rounded-xl bg-panel-deep/90 p-1 border border-outline shrink-0">
         <button
           onClick={() => onTabChange?.("rooms")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
             activeTab === "rooms"
-              ? "bg-panel text-accent shadow-sm"
+              ? "bg-panel text-accent shadow-sm border border-outline"
               : "text-muted hover:text-white"
           }`}
         >
@@ -118,7 +124,7 @@ export default function RoomList({
           onClick={() => onTabChange?.("dm")}
           className={`relative flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
             activeTab === "dm"
-              ? "bg-panel text-accent shadow-sm"
+              ? "bg-panel text-accent shadow-sm border border-outline"
               : "text-muted hover:text-white"
           }`}
         >
@@ -135,76 +141,86 @@ export default function RoomList({
       {activeTab === "rooms" && (
         <button
           onClick={onCreateRoom}
-          className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-accent-bright text-xs font-bold text-panel-deep glow-accent transition-all duration-200 hover:brightness-110"
+          className="flex h-10 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent-bright text-xs font-bold text-panel-deep glow-accent transition-all duration-200 hover:brightness-110 active:scale-[0.98] shadow-md"
         >
           <Plus size={16} strokeWidth={2.5} />
-          روم جدید
+          ساخت روم جدید
         </button>
       )}
 
+      {/* Search Bar */}
       <div className="relative shrink-0">
         <Search
           size={14}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted/60"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted/50"
         />
         <input
-          className="h-9 w-full rounded-xl bg-panel-deep pl-8 pr-3 text-xs text-on-surface placeholder:text-muted/60 focus:outline-none focus:ring-1 focus:ring-accent/30"
+          className="h-9 w-full rounded-xl bg-panel-deep/90 border border-outline pl-8 pr-3 text-xs text-on-surface placeholder:text-muted/50 focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/30 transition-all"
           placeholder={activeTab === "rooms" ? "جستجوی روم..." : "جستجوی کاربر..."}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
 
-      <div className="scrollbar-hidden flex-1 min-h-0 space-y-1.5 overflow-y-auto">
+      {/* List Feed */}
+      <div className="scrollbar-hidden flex-1 min-h-0 space-y-1 overflow-y-auto">
         {activeTab === "rooms" ? (
-          filteredRooms.map((room) => {
-            const isActive = selectedRoomId === room.id && !activeDMUserId;
-            return (
-              <button
-                key={room.id}
-                onClick={() => onSelect(room.id)}
-                className={`group flex w-full items-center gap-2.5 rounded-xl p-2.5 text-right transition-all duration-200 ${
-                  isActive
-                    ? "bg-panel-high border-r-4 border-accent"
-                    : "hover:bg-panel"
-                }`}
-              >
-                <span
-                  className={`relative flex w-10 h-10 shrink-0 items-center justify-center overflow-hidden rounded-lg text-lg transition-all duration-200 ${
+          filteredRooms.length === 0 ? (
+            <div className="py-12 text-center text-xs text-muted/60">
+              رومی یافت نشد
+            </div>
+          ) : (
+            filteredRooms.map((room) => {
+              const isActive = selectedRoomId === room.id && !activeDMUserId;
+              return (
+                <button
+                  key={room.id}
+                  onClick={() => onSelect(room.id)}
+                  className={`group flex w-full items-center gap-2.5 rounded-xl p-2.5 text-right transition-all duration-200 border ${
                     isActive
-                      ? "bg-accent/15 ring-2 ring-accent"
-                      : "bg-panel-soft"
+                      ? "bg-gradient-to-l from-accent/15 to-panel-soft border-accent/40 shadow-sm"
+                      : "border-transparent hover:bg-panel-soft/60 hover:border-outline"
                   }`}
                 >
-                  {room.avatar ? (
-                    <Image src={room.avatar} alt="" width={36} height={36} unoptimized className="h-full w-full object-cover" />
-                  ) : (
-                    room.icon
-                  )}
-                  {unreadRoomIds?.has(room.id) && !isActive && (
-                    <span className="absolute top-0.5 left-0.5 h-2 w-2 rounded-full bg-accent-bright border-2 border-panel-soft" />
-                  )}
-                  <span className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full bg-accent pulse-online border-2 border-panel-soft" />
-                </span>
-                <div className="flex-1 min-w-0 text-right">
-                  <div className="flex items-center gap-1.5">
-                    <p className="truncate text-xs font-bold text-on-surface">{room.name}</p>
-                    <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-panel-deep px-1.5 py-0.5 text-[9px] text-muted">
-                      {privacyIcon[room.privacy]}
-                      {privacyLabel[room.privacy]}
-                    </span>
+                  <span
+                    className={`relative flex w-10 h-10 shrink-0 items-center justify-center overflow-hidden rounded-xl text-lg transition-all duration-200 border ${
+                      isActive
+                        ? "bg-accent/20 border-accent/50 text-accent shadow-sm"
+                        : "bg-panel-soft border-outline"
+                    }`}
+                  >
+                    {room.avatar ? (
+                      <Image src={room.avatar} alt="" width={38} height={38} unoptimized className="h-full w-full object-cover" />
+                    ) : (
+                      room.icon
+                    )}
+                    {unreadRoomIds?.has(room.id) && !isActive && (
+                      <span className="absolute top-1 left-1 h-2 w-2 rounded-full bg-accent-bright border-2 border-panel-soft" />
+                    )}
+                    <span className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-emerald-400 pulse-online border border-panel-deep" />
+                  </span>
+                  <div className="flex-1 min-w-0 text-right">
+                    <div className="flex items-center gap-1.5">
+                      <p className={`truncate text-xs font-bold ${isActive ? "text-accent" : "text-on-surface"}`}>
+                        {room.name}
+                      </p>
+                      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-panel-deep px-1.5 py-0.5 text-[9px] text-muted border border-outline">
+                        {privacyIcon[room.privacy]}
+                        {privacyLabel[room.privacy]}
+                      </span>
+                    </div>
+                    <p className="truncate text-[11px] text-muted mt-0.5">{room.topic}</p>
                   </div>
-                  <p className="truncate text-[11px] text-muted">{room.topic}</p>
-                </div>
-                <span className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                  isActive ? "bg-accent/15 text-accent" : "bg-panel-deep text-muted"
-                }`}>
-                  <Users size={11} />
-                  {room.onlineCount}
-                </span>
-              </button>
-            );
-          })
+                  <span className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${
+                    isActive ? "bg-accent/15 text-accent border-accent/30" : "bg-panel-deep text-muted border-outline"
+                  }`}>
+                    <Users size={11} />
+                    {room.onlineCount}
+                  </span>
+                </button>
+              );
+            })
+          )
         ) : (
           /* DIRECT MESSAGES CONVERSATIONS TAB */
           filteredConvos.length > 0 ? (
@@ -220,31 +236,33 @@ export default function RoomList({
                       avatar: convo.partnerAvatar,
                     })
                   }
-                  className={`group flex w-full items-center gap-2.5 rounded-xl p-2.5 text-right transition-all duration-200 ${
+                  className={`group flex w-full items-center gap-2.5 rounded-xl p-2.5 text-right transition-all duration-200 border ${
                     isActive
-                      ? "bg-panel-high border-r-4 border-accent"
-                      : "hover:bg-panel"
+                      ? "bg-gradient-to-l from-accent/15 to-panel-soft border-accent/40 shadow-sm"
+                      : "border-transparent hover:bg-panel-soft/60 hover:border-outline"
                   }`}
                 >
                   <span
-                    className={`relative flex w-10 h-10 shrink-0 items-center justify-center overflow-hidden rounded-lg text-sm font-bold transition-all duration-200 ${
+                    className={`relative flex w-10 h-10 shrink-0 items-center justify-center overflow-hidden rounded-xl text-sm font-bold transition-all duration-200 border ${
                       isActive
-                        ? "bg-accent/15 ring-2 ring-accent"
-                        : "bg-panel-soft"
+                        ? "bg-accent/20 border-accent/50 text-accent shadow-sm"
+                        : "bg-panel-soft border-outline"
                     }`}
                   >
                     {convo.partnerAvatar?.startsWith("/avatars/") || convo.partnerAvatar?.startsWith("http") ? (
-                      <Image src={convo.partnerAvatar} alt="" width={36} height={36} unoptimized className="h-full w-full object-cover" />
+                      <Image src={convo.partnerAvatar} alt="" width={38} height={38} unoptimized className="h-full w-full object-cover" />
                     ) : (
                       convo.partnerAvatar || "👤"
                     )}
-                    <span className="absolute bottom-0.5 right-0.5 h-2 w-2 rounded-full bg-accent pulse-online border-2 border-panel-soft" />
+                    <span className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-emerald-400 pulse-online border border-panel-deep" />
                   </span>
                   <div className="flex-1 min-w-0 text-right">
                     <div className="flex items-center justify-between">
-                      <p className="truncate text-xs font-bold text-on-surface">{convo.partnerName}</p>
+                      <p className={`truncate text-xs font-bold ${isActive ? "text-accent" : "text-on-surface"}`}>
+                        {convo.partnerName}
+                      </p>
                     </div>
-                    <p className="truncate text-[11px] text-muted">
+                    <p className="truncate text-[11px] text-muted mt-0.5">
                       {convo.lastMessage
                         ? convo.lastMessage.type === "game_invite"
                           ? `⚔️ چالش ${convo.lastMessage.metadata?.gameTitle || "بازی"}`
@@ -261,64 +279,75 @@ export default function RoomList({
               );
             })
           ) : (
-            <div className="py-8 text-center text-xs text-muted/60">
-              هنوز گفتگوی خصوصی ندارید. با کلیک روی هر کاربر در پنل سمت چپ، گفتگوی دو نفره را آغاز کنید!
+            <div className="py-12 text-center text-xs text-muted/60 px-2 leading-relaxed">
+              هنوز گفتگوی خصوصی ندارید. با کلیک روی هر کاربر در پنل اعضا، گفتگوی دو نفره را آغاز کنید!
             </div>
           )
         )}
       </div>
 
-      {/* Profile section */}
+      {/* Profile footer section with XP Bar */}
       {currentUser && (
-        <div className="shrink-0 border-t border-outline pt-4">
-          <div className="flex items-center justify-between rounded-xl bg-panel-soft p-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="relative w-10 h-10 shrink-0">
+        <div className="shrink-0 border-t border-outline pt-3">
+          <div className="flex items-center justify-between rounded-xl bg-panel-soft/80 border border-outline p-2.5 shadow-sm">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div className="relative w-9 h-9 shrink-0">
                 {currentUser.avatar &&
                 (currentUser.avatar.startsWith("/avatars/") ||
                   currentUser.avatar.startsWith("http")) ? (
                   <Image
                     src={currentUser.avatar}
                     alt=""
-                    width={40}
-                    height={40}
+                    width={36}
+                    height={36}
                     unoptimized
-                    className="h-10 w-10 rounded-lg object-cover ring-2 ring-accent"
+                    className="h-9 w-9 rounded-xl object-cover ring-2 ring-accent/60 shadow-sm"
                   />
                 ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/15 text-base text-accent ring-2 ring-accent">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-sm text-accent ring-2 ring-accent/60 font-bold">
                     {currentUser.avatar}
                   </span>
                 )}
+                <span className="absolute -bottom-1 -left-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[9px] font-black text-panel-deep shadow-sm">
+                  {currentUser.level}
+                </span>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-bold truncate text-on-surface">{currentUser.name}</p>
-                <p className="text-[11px] text-muted">
-                  Level {currentUser.level} • XP {currentUser.xp}
-                </p>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {currentUser.badges.slice(0, 3).map((badge) => (
+                <div className="flex items-center justify-between">
+                  <p className="text-[13px] font-bold truncate text-on-surface">{currentUser.name}</p>
+                  <span className="text-[10px] text-accent font-semibold">{currentUser.xp} XP</span>
+                </div>
+                {/* XP Progress Bar */}
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-panel-deep border border-outline">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-accent to-accent-bright transition-all duration-300"
+                    style={{ width: `${Math.min(100, Math.max(10, (currentUser.xp % 100)))}%` }}
+                  />
+                </div>
+                <div className="mt-1 flex items-center gap-1">
+                  {currentUser.wins > 0 && (
+                    <span className="flex items-center gap-0.5 rounded-full bg-accent/10 px-1.5 py-0.2 text-[9px] font-medium text-accent border border-accent/20">
+                      <Award size={9} />
+                      {currentUser.wins} برد
+                    </span>
+                  )}
+                  {currentUser.badges.slice(0, 2).map((badge) => (
                     <span
                       key={badge}
-                      className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent"
+                      className="rounded-full bg-white/5 px-1.5 py-0.2 text-[9px] text-muted border border-outline truncate max-w-[60px]"
                     >
                       {badge}
                     </span>
                   ))}
-                  {currentUser.wins > 0 && (
-                    <span className="flex items-center gap-0.5 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
-                      <Award size={10} />
-                      {currentUser.wins} برد
-                    </span>
-                  )}
                 </div>
               </div>
             </div>
             <button
               onClick={onOpenProfile}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-panel-deep text-muted hover:text-accent transition-colors"
+              title="پروفایل و تنظیمات"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel-deep border border-outline text-muted hover:text-accent hover:border-accent/30 transition-all mr-1.5"
             >
-              <Settings size={16} />
+              <Settings size={15} />
             </button>
           </div>
         </div>
