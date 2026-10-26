@@ -177,6 +177,24 @@ export default function CinemaModal({
   // Live in-cinema chat & reactions state
   const [showCinemaChat, setShowCinemaChat] = useState(true);
   const [isChatInputOpen, setIsChatInputOpen] = useState(false);
+  const [isChatInputFocused, setIsChatInputFocused] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [fitMode, setFitMode] = useState<"contain" | "cover">("contain");
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const resetControlsTimeout = useCallback((keepOpen = false) => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    setShowControls(true);
+    if (!keepOpen) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3500);
+    }
+  }, []);
+
   const floatingChatInputRef = useRef<HTMLInputElement | null>(null);
   const [chatMessageText, setChatMessageText] = useState("");
   const [floatingReactions, setFloatingReactions] = useState<
@@ -1009,11 +1027,472 @@ export default function CinemaModal({
 
   const isLocalWaitingForFile = cinemaState?.type === "local" && !localVideoUrl;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+  if (hasVideoSource) {
+    return (
       <div
         ref={containerRef}
-        className="relative w-full max-w-5xl h-[680px] max-h-[94vh] flex flex-col rounded-3xl bg-panel-deep border border-outline shadow-2xl overflow-hidden"
+        onMouseMove={() => {
+          if (!isChatInputFocused) resetControlsTimeout();
+        }}
+        onTouchStart={() => {
+          if (!isChatInputFocused) resetControlsTimeout();
+        }}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button, input, form, a")) return;
+          setShowControls((prev) => {
+            if (!prev) {
+              resetControlsTimeout();
+              return true;
+            } else {
+              if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+              return false;
+            }
+          });
+        }}
+        className="fixed inset-0 z-50 w-full h-[100dvh] bg-black overflow-hidden flex flex-col select-none touch-manipulation animate-fade-in"
+      >
+        {/* 1. Fullscreen / Edge-to-Edge Video Canvas */}
+        <div className="absolute inset-0 w-full h-full bg-black flex items-center justify-center overflow-hidden">
+          {cinemaState?.type === "stream" || isScreenSharing ? (
+            <video
+              ref={bindStreamVideo}
+              autoPlay
+              playsInline
+              className={`w-full h-full bg-black transition-all duration-300 ${
+                fitMode === "cover" ? "object-cover" : "object-contain"
+              }`}
+            />
+          ) : cinemaState?.type === "youtube" ? (
+            <div
+              ref={ytMountContainerRef}
+              className={`transition-transform duration-300 w-full h-full flex items-center justify-center [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-0 ${
+                fitMode === "cover" ? "scale-[1.28] origin-center" : "scale-100"
+              }`}
+            />
+          ) : (
+            <video
+              ref={videoRef}
+              src={cinemaState?.type === "url" ? cinemaState.url : localVideoUrl || undefined}
+              className={`w-full h-full transition-all duration-300 ${
+                fitMode === "cover" ? "object-cover" : "object-contain"
+              }`}
+              onTimeUpdate={() => {
+                if (videoRef.current && !isSeekingRef.current) {
+                  setLocalProgress(videoRef.current.currentTime);
+                }
+              }}
+              onLoadedMetadata={() => {
+                if (videoRef.current) {
+                  setDuration(videoRef.current.duration || 0);
+                }
+              }}
+              onEnded={() => {
+                if (canControl) {
+                  socket?.emit("cinema_pause", { roomId, currentTime: duration });
+                }
+              }}
+              playsInline
+            >
+              {subtitleUrl && subtitleEnabled && (
+                <track
+                  default
+                  kind="subtitles"
+                  src={subtitleUrl}
+                  srcLang="fa"
+                  label="زیرنویس فارسی"
+                />
+              )}
+            </video>
+          )}
+        </div>
+
+        {/* 2. Floating Live Reaction Emojis */}
+        <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
+          {floatingReactions.map((rx) => (
+            <div
+              key={rx.id}
+              className="absolute bottom-24 text-4xl animate-bounce drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]"
+              style={{
+                left: `${rx.x}%`,
+                animation: "miniChatBubble 2.5s ease-out forwards",
+              }}
+            >
+              <span>{rx.emoji}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* 3. Toast Action Notice */}
+        {lastActionNotice && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-xl bg-black/85 backdrop-blur-md border border-white/20 text-xs text-white font-bold animate-fade-in shadow-xl pointer-events-none">
+            {lastActionNotice}
+          </div>
+        )}
+
+        {/* 4. Floating Danmaku Live Chat Bubbles (Non-blocking) */}
+        {chatOverlayBubbles.length > 0 && (
+          <div
+            dir="rtl"
+            className="absolute bottom-24 right-3 sm:right-6 z-40 max-w-[280px] sm:max-w-xs pointer-events-none flex flex-col gap-2"
+          >
+            {chatOverlayBubbles.map((bubble) => (
+              <div
+                key={bubble.id}
+                className={`flex ${bubble.isMine ? "justify-start" : "justify-end"}`}
+              >
+                <div
+                  className={`animate-mini-chat-bubble max-w-[90%] rounded-2xl border px-3.5 py-2 shadow-2xl backdrop-blur-md ${
+                    bubble.isMine
+                      ? "rounded-tr-none border-accent/40 bg-black/80 text-white"
+                      : "rounded-tl-none border-white/20 bg-black/70 text-white"
+                  }`}
+                >
+                  {!bubble.isMine && (
+                    <span className="text-[11px] text-accent font-bold block mb-0.5">
+                      {bubble.user}
+                    </span>
+                  )}
+                  <p className="text-xs sm:text-sm leading-relaxed break-words">{bubble.content}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 5. Streamer / Viewer Live Banners */}
+        {isStreamer && (
+          <div className="absolute top-16 right-4 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-600/90 text-white text-xs font-bold shadow-lg backdrop-blur">
+            <Radio size={14} className="animate-pulse" />
+            <span>شما در حال پخش فیلم هستید</span>
+            <button
+              type="button"
+              onClick={handleStopScreenShare}
+              className="mr-2 rounded-lg bg-black/40 hover:bg-black/60 px-2 py-0.5 text-[11px] transition-all"
+            >
+              توقف
+            </button>
+          </div>
+        )}
+
+        {isViewingLiveStream && (
+          <div className="absolute top-16 right-4 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/70 text-slate-200 border border-white/10 text-xs font-bold backdrop-blur">
+            <Radio size={14} className="text-rose-400 animate-pulse" />
+            <span>پخش زنده: {cinemaState?.streamerName || "میزبان"}</span>
+            {streamConnecting && (
+              <span className="text-amber-400 text-[10px]">(در حال اتصال...)</span>
+            )}
+          </div>
+        )}
+
+        {/* 6. Top HUD Overlay (Auto-Hides) */}
+        <div
+          dir="rtl"
+          className={`absolute top-0 inset-x-0 z-30 p-2.5 sm:p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent flex items-center justify-between pointer-events-auto transition-opacity duration-300 ${
+            showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          style={{ paddingTop: "max(0.6rem, env(safe-area-inset-top, 10px))" }}
+        >
+          {/* Right (RTL): Close + Title & Sync info */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => {
+                sounds.playPop();
+                onClose();
+              }}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-black/60 hover:bg-black/90 text-white/90 hover:text-white border border-white/20 transition-all active:scale-90 shrink-0 shadow-lg"
+              title="خروج از سینما"
+            >
+              <X size={18} />
+            </button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-bold text-white truncate max-w-[140px] xs:max-w-[200px] sm:max-w-md">
+                  {cinemaState?.title || "پخش سینما"}
+                </h3>
+                {cinemaState?.status === "playing" && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
+                    <Radio size={8} className="animate-pulse" />
+                    <span className="hidden sm:inline">همگام با اتاق ({roomName})</span>
+                    <span className="sm:hidden">همگام</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Left: Fit/Fill mode, Review, Change movie, Host only, Fullscreen */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Fit / Fill Aspect Ratio Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                sounds.playPop();
+                setFitMode((prev) => (prev === "contain" ? "cover" : "contain"));
+                setLastActionNotice(
+                  fitMode === "contain"
+                    ? "🔲 حالت بدون حاشیه (پر کردن صفحه) فعال شد"
+                    : "🔳 حالت نسبت تصویر اصلی فعال شد"
+                );
+                setTimeout(() => setLastActionNotice(null), 2500);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold border transition-all shadow-md active:scale-95 ${
+                fitMode === "cover"
+                  ? "bg-accent text-panel-deep border-accent font-black"
+                  : "bg-black/60 text-white/90 border-white/20 hover:bg-black/80"
+              }`}
+              title={fitMode === "cover" ? "برگشت به اندازه اصلی" : "پر کردن کل صفحه (حذف حاشیه‌ها)"}
+            >
+              {fitMode === "cover" ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              <span className="text-[11px] hidden xs:inline">
+                {fitMode === "cover" ? "اندازه اصلی" : "حذف حاشیه‌ها"}
+              </span>
+            </button>
+
+            {/* Rating / Review Hub */}
+            {onOpenCinemaHub && (
+              <button
+                type="button"
+                onClick={onOpenCinemaHub}
+                className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all"
+                title="نقد و نمره‌دهی"
+              >
+                <Star size={13} className="fill-amber-400 text-amber-400" />
+                <span className="hidden md:inline">نقد و نمره</span>
+              </button>
+            )}
+
+            {/* Change Movie */}
+            {canControl && (
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playPop();
+                  if (cinemaState?.type === "stream") {
+                    handleStopScreenShare();
+                  } else {
+                    if (ytPlayerRef.current) {
+                      try {
+                        ytPlayerRef.current.destroy();
+                      } catch (_) {}
+                      ytPlayerRef.current = null;
+                      currentVideoIdRef.current = null;
+                    }
+                    if (ytMountContainerRef.current) {
+                      ytMountContainerRef.current.innerHTML = "";
+                    }
+                    socket?.emit("cinema_set_source", {
+                      roomId,
+                      type: "none",
+                      url: "",
+                      title: "",
+                    });
+                  }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold bg-black/60 hover:bg-black/80 text-white/90 border border-white/20 transition-all active:scale-95 shadow-md"
+                title="تغییر فیلم"
+              >
+                <RefreshCw size={13} />
+                <span className="text-[11px] hidden sm:inline">تغییر فیلم</span>
+              </button>
+            )}
+
+            {/* Fullscreen Toggle */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 transition-all active:scale-95 shadow-md"
+              title="تمام‌صفحه مرورگر"
+            >
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {/* 7. Bottom HUD Overlay (Auto-Hides, Dedicated to Chat & Reactions) */}
+        <div
+          dir="rtl"
+          className={`absolute bottom-0 inset-x-0 z-30 p-2.5 sm:p-4 bg-gradient-to-t from-black/95 via-black/60 to-transparent flex flex-col gap-2 pointer-events-auto transition-opacity duration-300 ${
+            showControls || isChatInputFocused ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 12px))" }}
+        >
+          {/* Non-YouTube Controls (HTML5/Direct/Local Timeline + Play/Pause) */}
+          {cinemaState?.type !== "youtube" && (
+            <div className="flex flex-col gap-2 max-w-3xl mx-auto w-full">
+              {/* Timeline for Direct/Local */}
+              {cinemaState?.type !== "stream" && (
+                <div className="flex items-center gap-3 w-full">
+                  <span className="text-[11px] font-mono text-slate-300 min-w-[40px] text-left">
+                    {formatTime(localProgress)}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || 100}
+                    step={0.5}
+                    disabled={!canControl}
+                    value={localProgress}
+                    onMouseDown={() => (isSeekingRef.current = true)}
+                    onMouseUp={(e) => {
+                      isSeekingRef.current = false;
+                      handleSeek(Number((e.target as HTMLInputElement).value));
+                    }}
+                    onTouchStart={() => (isSeekingRef.current = true)}
+                    onTouchEnd={(e) => {
+                      isSeekingRef.current = false;
+                      handleSeek(Number((e.target as HTMLInputElement).value));
+                    }}
+                    onChange={(e) => setLocalProgress(Number(e.target.value))}
+                    className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20 focus:outline-none"
+                  />
+                  <span className="text-[11px] font-mono text-slate-400 min-w-[40px] text-right">
+                    {formatTime(duration)}
+                  </span>
+                </div>
+              )}
+
+              {/* Controls row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {cinemaState?.type !== "stream" ? (
+                    <button
+                      type="button"
+                      onClick={togglePlay}
+                      disabled={!canControl}
+                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-panel-deep font-bold hover:brightness-110 active:scale-95 shadow"
+                    >
+                      {cinemaState?.status === "playing" ? (
+                        <Pause size={16} fill="currentColor" />
+                      ) : (
+                        <Play size={16} fill="currentColor" className="translate-x-0.5" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold">
+                      <Radio size={12} className="animate-pulse" />
+                      <span>پخش زنده</span>
+                    </div>
+                  )}
+
+                  {/* Volume Slider */}
+                  <div className="flex items-center gap-1.5 bg-white/10 px-2 py-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextMute = !isMuted;
+                        setIsMuted(nextMute);
+                        if (streamVideoRef.current) streamVideoRef.current.muted = nextMute;
+                        if (videoRef.current) videoRef.current.muted = nextMute;
+                      }}
+                      className="text-slate-300 hover:text-white"
+                    >
+                      {isMuted || volume === 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={isMuted ? 0 : volume}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setVolume(val);
+                        setIsMuted(false);
+                        if (streamVideoRef.current) {
+                          streamVideoRef.current.volume = val;
+                          streamVideoRef.current.muted = false;
+                        }
+                        if (videoRef.current) {
+                          videoRef.current.volume = val;
+                          videoRef.current.muted = false;
+                        }
+                      }}
+                      className="hidden sm:block w-16 h-1 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Subtitle button */}
+                {subtitleUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setSubtitleEnabled((prev) => !prev)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition-all border ${
+                      subtitleEnabled
+                        ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                        : "bg-white/5 text-muted border-white/10"
+                    }`}
+                  >
+                    <Subtitles size={13} />
+                    <span>زیرنویس</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Floating Dedicated Live Message Bar (Clean & Streamlined) */}
+          <div className="flex items-center gap-2 max-w-2xl mx-auto w-full px-1">
+            <form
+              onSubmit={(e) => {
+                handleSendCinemaMessage(e);
+                resetControlsTimeout();
+              }}
+              className="flex-1 flex items-center gap-2 rounded-full border border-white/20 bg-black/70 px-3 py-1.5 backdrop-blur-md shadow-2xl focus-within:border-accent transition-all"
+            >
+              <MessageSquare size={15} className="text-accent shrink-0" />
+              <input
+                ref={floatingChatInputRef}
+                type="text"
+                value={chatMessageText}
+                onChange={(e) => setChatMessageText(e.target.value)}
+                onFocus={() => {
+                  setIsChatInputFocused(true);
+                  resetControlsTimeout(true);
+                }}
+                onBlur={() => {
+                  setIsChatInputFocused(false);
+                  resetControlsTimeout();
+                }}
+                placeholder="ارسال پیام روی فیلم... (چت زنده با اعضای اتاق)"
+                className="flex-1 bg-transparent text-xs sm:text-sm text-white placeholder-slate-400 outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!chatMessageText.trim()}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-panel-deep transition-all hover:brightness-110 active:scale-90 disabled:opacity-40 shrink-0 shadow-sm"
+                title="ارسال پیام"
+              >
+                <Send size={13} className="rotate-180" />
+              </button>
+            </form>
+
+            {/* Quick Reactions */}
+            <div className="flex items-center gap-1 rounded-full border border-white/15 bg-black/60 px-2 py-1 backdrop-blur-md shrink-0 shadow-xl">
+              {CINEMA_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => sendReaction(emoji)}
+                  className="text-sm sm:text-base hover:scale-125 active:scale-90 transition-transform px-0.5"
+                  title={`ری‌اکشن ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+      <div
+        ref={containerRef}
+        className="relative w-full h-[100dvh] sm:h-[680px] sm:max-h-[94vh] sm:max-w-5xl flex flex-col rounded-none sm:rounded-3xl bg-panel-deep sm:border border-outline shadow-2xl overflow-hidden"
       >
         {/* Floating Reactions across the screen */}
         <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
@@ -1031,68 +1510,25 @@ export default function CinemaModal({
           ))}
         </div>
 
-        {/* 1. Modal Header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-outline bg-panel/90 shrink-0 z-20">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400 border border-purple-400/30 shadow-sm">
-              <Film size={18} className="drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
+        {/* 1. Modal Header (Setup Mode) */}
+        <div className="flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3 border-b border-outline bg-panel/95 shrink-0 z-20">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400 border border-purple-400/30 shadow-sm">
+              <Film size={16} className="drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm sm:text-base font-extrabold text-on-surface leading-tight">
-                  سینما روم (Watch Together)
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h2 className="text-xs sm:text-base font-black text-on-surface leading-tight whitespace-nowrap">
+                  سینما روم <span className="hidden sm:inline font-normal text-xs text-muted">(Watch Together)</span>
                 </h2>
-                {cinemaState?.type === "stream" ? (
-                  <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
-                    <Radio size={11} className="text-rose-400" />
-                    <span>پخش زنده فعال (LIVE)</span>
-                  </span>
-                ) : cinemaState?.status !== "idle" && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    <Radio size={10} className="animate-pulse" />
-                    <span>همگام با اتاق ({roomName})</span>
-                  </span>
-                )}
               </div>
-              <p className="text-[11px] text-muted truncate max-w-[200px] sm:max-w-md">
-                {cinemaState?.title
-                  ? cinemaState.title
-                  : "پخش همزمان و لایو استریم فیلم با افراد روم"}
+              <p className="text-[10px] sm:text-[11px] text-muted truncate max-w-[180px] sm:max-w-md">
+                پخش همزمان و لایو استریم در اتاق ({roomName})
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick Reactions Bar */}
-            <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-outline rounded-2xl px-2 py-1">
-              {CINEMA_REACTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => sendReaction(emoji)}
-                  className="hover:scale-125 active:scale-95 text-sm p-1 transition-transform"
-                  title={`ارسال ری‌اکشن ${emoji}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-
-            {/* In-Cinema Chat Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setShowCinemaChat((prev) => !prev)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                showCinemaChat
-                  ? "bg-accent text-panel-deep shadow-sm"
-                  : "bg-panel text-muted hover:text-white border-outline"
-              }`}
-              title="گفتگو و چت همزمان در سینما"
-            >
-              <MessageSquare size={14} />
-              <span className="hidden sm:inline">چت زنده</span>
-            </button>
-
             {/* Host Only Toggle */}
             {isRoomOwner && (
               <button
@@ -1138,7 +1574,7 @@ export default function CinemaModal({
           </div>
         </div>
 
-        {/* 2. Main Player Body with Optional Live Chat Drawer */}
+        {/* 2. Setup / Waiting Body */}
         <div className="flex-1 min-h-0 bg-black flex relative overflow-hidden">
           {/* Action Notice Overlay Toast */}
           {lastActionNotice && (
@@ -1147,377 +1583,7 @@ export default function CinemaModal({
             </div>
           )}
 
-          {/* Left/Center Area: Video Theater */}
-          <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-black">
-            {/* Floating Live Chat & Bubbles on Video (like in games) */}
-            {showCinemaChat && (
-              <div
-                dir="rtl"
-                className="absolute bottom-16 sm:bottom-20 right-4 sm:right-6 z-40 w-[calc(100%-2rem)] sm:w-80 pointer-events-none flex flex-col gap-2"
-              >
-                {/* Floating Bubbles Stack */}
-                {chatOverlayBubbles.length > 0 && (
-                  <div className="pointer-events-auto flex flex-col gap-2">
-                    {chatOverlayBubbles.map((bubble) => (
-                      <div
-                        key={bubble.id}
-                        className={`flex ${bubble.isMine ? "justify-start" : "justify-end"}`}
-                      >
-                        <div
-                          className={`animate-mini-chat-bubble max-w-[85%] rounded-2xl border px-3.5 py-2 shadow-2xl backdrop-blur-md ${
-                            bubble.isMine
-                              ? "rounded-tr-none border-outline bg-panel/95 text-white"
-                              : "rounded-tl-none border-outline bg-panel-soft/95 text-white"
-                          }`}
-                        >
-                          {!bubble.isMine && (
-                            <span className="text-[11px] text-accent font-bold block mb-0.5">
-                              {bubble.user}
-                            </span>
-                          )}
-                          <p className="text-[13px] leading-relaxed break-words">{bubble.content}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Floating Chat Trigger (FAB Circle) or Expanded Input */}
-                {!isChatInputOpen ? (
-                  <div className="flex justify-start">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsChatInputOpen(true);
-                        setTimeout(() => floatingChatInputRef.current?.focus(), 50);
-                      }}
-                      className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent text-panel-deep shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 border border-amber-300/40 hover:brightness-110"
-                      title="ارسال پیام روی فیلم"
-                    >
-                      <MessageSquare size={19} />
-                    </button>
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      handleSendCinemaMessage(e);
-                      setIsChatInputOpen(false);
-                    }}
-                    className="pointer-events-auto flex items-center gap-1.5 rounded-2xl border border-outline bg-panel-deep/95 p-1.5 backdrop-blur-md shadow-2xl animate-fade-in w-full"
-                  >
-                    <input
-                      ref={floatingChatInputRef}
-                      className="flex-1 rounded-xl border border-outline bg-panel px-3 py-1.5 text-xs text-white placeholder-muted/60 outline-none transition-colors focus:border-accent"
-                      placeholder="پیام روی فیلم... (Enter)"
-                      value={chatMessageText}
-                      onChange={(e) => setChatMessageText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") setIsChatInputOpen(false);
-                      }}
-                    />
-                    <button
-                      type="submit"
-                      disabled={!chatMessageText.trim()}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent text-panel-deep transition-all hover:brightness-110 active:scale-90 disabled:opacity-40 shrink-0 shadow-sm"
-                      title="ارسال پیام"
-                    >
-                      <Send size={14} className="rotate-180" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsChatInputOpen(false)}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl text-muted hover:text-white hover:bg-white/10 transition-colors shrink-0"
-                      title="بستن"
-                    >
-                      <X size={15} />
-                    </button>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {/* Floating Live Reactions */}
-            {floatingReactions.length > 0 && (
-              <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-                {floatingReactions.map((rx) => (
-                  <div
-                    key={rx.id}
-                    className="absolute bottom-16 animate-float-reaction flex flex-col items-center pointer-events-none"
-                    style={{ left: `${rx.x}%` }}
-                  >
-                    <span className="text-3xl select-none filter drop-shadow-lg">{rx.emoji}</span>
-                    <span className="text-[9px] bg-black/60 px-1.5 py-0.5 rounded-full text-white/90 font-bold backdrop-blur mt-0.5">
-                      {rx.user}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* A. Playable Source (Stream, YouTube, or HTML5) */}
-            {hasVideoSource ? (
-              <div className="relative flex-1 w-full h-full flex flex-col justify-center items-center bg-black group">
-                {/* 1. WebRTC Screen Share Live Stream Player */}
-                {cinemaState?.type === "stream" || isScreenSharing ? (
-                  <div className="w-full h-full relative flex items-center justify-center bg-black">
-                    <video
-                      ref={bindStreamVideo}
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-contain bg-black"
-                    />
-
-                    {/* Streamer Banner */}
-                    {isStreamer && (
-                      <div className="absolute top-3 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-600/90 text-white text-xs font-bold shadow-lg backdrop-blur">
-                        <Radio size={14} className="animate-pulse" />
-                        <span>شما در حال پخش فیلم هستید</span>
-                        <button
-                          type="button"
-                          onClick={handleStopScreenShare}
-                          className="mr-2 rounded-lg bg-black/40 hover:bg-black/60 px-2 py-0.5 text-[11px] transition-all"
-                        >
-                          توقف
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Viewer Banner */}
-                    {isViewingLiveStream && (
-                      <div className="absolute top-3 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/70 text-slate-200 border border-white/10 text-xs font-bold backdrop-blur">
-                        <Radio size={14} className="text-rose-400 animate-pulse" />
-                        <span>پخش زنده: {cinemaState.streamerName || "میزبان"}</span>
-                        {streamConnecting && (
-                          <span className="text-amber-400 text-[10px]">(در حال اتصال...)</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : cinemaState?.type === "youtube" ? (
-                  /* 2. YouTube IFrame Player */
-                  <div className="w-full h-full relative flex items-center justify-center bg-black">
-                    <div ref={ytMountContainerRef} className="w-full h-full" />
-                  </div>
-                ) : (
-                  /* 3. Native HTML5 Video Player */
-                  <video
-                    ref={videoRef}
-                    src={cinemaState?.type === "url" ? cinemaState.url : localVideoUrl || undefined}
-                    className="w-full h-full object-contain"
-                    onTimeUpdate={() => {
-                      if (videoRef.current && !isSeekingRef.current) {
-                        setLocalProgress(videoRef.current.currentTime);
-                      }
-                    }}
-                    onLoadedMetadata={() => {
-                      if (videoRef.current) {
-                        setDuration(videoRef.current.duration || 0);
-                      }
-                    }}
-                    onEnded={() => {
-                      if (canControl) {
-                        socket?.emit("cinema_pause", { roomId, currentTime: duration });
-                      }
-                    }}
-                    playsInline
-                  >
-                    {subtitleUrl && subtitleEnabled && (
-                      <track
-                        default
-                        kind="subtitles"
-                        src={subtitleUrl}
-                        srcLang="fa"
-                        label="زیرنویس فارسی"
-                      />
-                    )}
-                  </video>
-                )}
-
-                {/* Player Bottom Control Bar */}
-                <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/70 to-transparent flex flex-col gap-2 transition-opacity duration-300 opacity-95 group-hover:opacity-100 z-20">
-                  {/* Timeline (HTML5 direct / local only) */}
-                  {cinemaState?.type !== "youtube" && cinemaState?.type !== "stream" && (
-                    <div className="flex items-center gap-3 w-full">
-                      <span className="text-[11px] font-mono text-slate-300 min-w-[40px] text-left">
-                        {formatTime(localProgress)}
-                      </span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={duration || 100}
-                        step={0.5}
-                        disabled={!canControl}
-                        value={localProgress}
-                        onMouseDown={() => (isSeekingRef.current = true)}
-                        onMouseUp={(e) => {
-                          isSeekingRef.current = false;
-                          handleSeek(Number((e.target as HTMLInputElement).value));
-                        }}
-                        onTouchStart={() => (isSeekingRef.current = true)}
-                        onTouchEnd={(e) => {
-                          isSeekingRef.current = false;
-                          handleSeek(Number((e.target as HTMLInputElement).value));
-                        }}
-                        onChange={(e) => setLocalProgress(Number(e.target.value))}
-                        className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20 focus:outline-none"
-                      />
-                      <span className="text-[11px] font-mono text-slate-400 min-w-[40px] text-right">
-                        {formatTime(duration)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Controls row */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      {/* Play/Pause for non-stream */}
-                      {cinemaState?.type !== "stream" ? (
-                        <button
-                          type="button"
-                          onClick={togglePlay}
-                          disabled={!canControl}
-                          className={`flex h-9 w-9 items-center justify-center rounded-xl transition-all shadow-md active:scale-95 ${
-                            cinemaState?.status === "playing"
-                              ? "bg-amber-500 hover:bg-amber-400 text-panel-deep"
-                              : "bg-accent hover:brightness-110 text-panel-deep"
-                          } ${!canControl ? "opacity-50 cursor-not-allowed" : ""}`}
-                          title="پخش / توقف"
-                        >
-                          {cinemaState?.status === "playing" ? (
-                            <Pause size={18} fill="currentColor" />
-                          ) : (
-                            <Play size={18} fill="currentColor" className="translate-x-0.5" />
-                          )}
-                        </button>
-                      ) : (
-                        /* Stream Status Badge */
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold">
-                          <Radio size={13} className="animate-pulse" />
-                          <span>پخش زنده بدون تأخیر</span>
-                        </div>
-                      )}
-
-                      {/* Volume Slider */}
-                      {cinemaState?.type !== "youtube" && (
-                        <div className="flex items-center gap-1.5 bg-white/10 px-2 py-1 rounded-xl">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextMute = !isMuted;
-                              setIsMuted(nextMute);
-                              if (streamVideoRef.current) streamVideoRef.current.muted = nextMute;
-                              if (videoRef.current) videoRef.current.muted = nextMute;
-                            }}
-                            className="text-slate-300 hover:text-white"
-                          >
-                            {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                          </button>
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.05}
-                            value={isMuted ? 0 : volume}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setVolume(val);
-                              setIsMuted(false);
-                              if (streamVideoRef.current) {
-                                streamVideoRef.current.volume = val;
-                                streamVideoRef.current.muted = false;
-                              }
-                              if (videoRef.current) {
-                                videoRef.current.volume = val;
-                                videoRef.current.muted = false;
-                              }
-                            }}
-                            className="w-14 sm:w-20 h-1 rounded-lg appearance-none cursor-pointer accent-accent bg-white/20"
-                          />
-                        </div>
-                      )}
-
-                      {/* Mobile Reactions */}
-                      <div className="flex sm:hidden items-center gap-1">
-                        {["🍿", "❤️", "🔥"].map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => sendReaction(emoji)}
-                            className="text-sm p-1"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Right side controls */}
-                    <div className="flex items-center gap-2">
-                      {/* Subtitle (HTML5 only) */}
-                      {subtitleUrl && cinemaState?.type !== "youtube" && cinemaState?.type !== "stream" && (
-                        <button
-                          type="button"
-                          onClick={() => setSubtitleEnabled((prev) => !prev)}
-                          className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold transition-all border ${
-                            subtitleEnabled
-                              ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
-                              : "bg-white/5 text-muted border-white/10"
-                          }`}
-                        >
-                          <Subtitles size={14} />
-                          <span className="hidden sm:inline">زیرنویس</span>
-                        </button>
-                      )}
-
-                      {/* Change Video / Source */}
-                      {canControl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            sounds.playPop();
-                            if (cinemaState?.type === "stream") {
-                              handleStopScreenShare();
-                            } else {
-                              if (ytPlayerRef.current) {
-                                try {
-                                  ytPlayerRef.current.destroy();
-                                } catch (_) {}
-                                ytPlayerRef.current = null;
-                                currentVideoIdRef.current = null;
-                              }
-                              if (ytMountContainerRef.current) {
-                                ytMountContainerRef.current.innerHTML = "";
-                              }
-                              socket?.emit("cinema_set_source", {
-                                roomId,
-                                type: "none",
-                                url: "",
-                                title: "",
-                              });
-                            }
-                          }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 transition-all"
-                          title="تغییر فیلم"
-                        >
-                          <RefreshCw size={13} />
-                          <span className="hidden sm:inline">تغییر فیلم</span>
-                        </button>
-                      )}
-
-                      {/* Fullscreen Button */}
-                      <button
-                        type="button"
-                        onClick={toggleFullscreen}
-                        className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all"
-                        title="تمام‌صفحه"
-                      >
-                        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : isLocalWaitingForFile ? (
+          {isLocalWaitingForFile ? (
               /* B. Waiting for Local File (Syncplay mode) */
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 max-w-md mx-auto">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-400/30">
@@ -1561,7 +1627,7 @@ export default function CinemaModal({
                   </div>
 
                   {/* Mode Tabs */}
-                  <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-panel border border-outline">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-2xl bg-panel border border-outline">
                     {/* Tab 1: Live Stream (Screen Share) */}
                     <button
                       type="button"
@@ -1843,7 +1909,6 @@ export default function CinemaModal({
                 </div>
               </div>
             )}
-          </div>
         </div>
       </div>
     </div>

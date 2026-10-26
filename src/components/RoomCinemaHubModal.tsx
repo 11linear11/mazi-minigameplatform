@@ -592,10 +592,10 @@ export default function RoomCinemaHubModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="relative flex flex-col w-full max-w-4xl h-[92vh] max-h-[880px] bg-panel rounded-2xl border border-outline shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5 bg-black/85 backdrop-blur-md animate-fadeIn">
+      <div className="relative flex flex-col w-full h-[100dvh] sm:h-[92vh] max-h-[100dvh] sm:max-h-[880px] sm:max-w-4xl bg-panel rounded-none sm:rounded-2xl sm:border border-outline shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="relative shrink-0 flex items-center justify-between px-6 py-4 border-b border-outline bg-gradient-to-r from-purple-900/40 via-panel-soft to-panel">
+        <div className="relative shrink-0 flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-outline bg-gradient-to-r from-purple-900/40 via-panel-soft to-panel">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white shadow-lg shadow-purple-500/25">
               <Film size={22} />
