@@ -308,7 +308,7 @@ export default function UnoGame({ state, currentUserId, isMyTurn, isWaiting, onA
         </div>
 
         {/* Horizontal Cards Scrollable Tray */}
-        <div className="w-full overflow-x-auto scrollbar-hidden py-2 px-2">
+        <div className="w-full overflow-x-auto scrollbar-hidden py-2 px-2" style={{ touchAction: "pan-x" }}>
           <div className="flex -space-x-3 sm:-space-x-4 lg:-space-x-5 items-end justify-center min-w-max pb-2 pt-3">
             {myPlayer.hand.map((card, index) => {
               const playable = canPlayCard(card);

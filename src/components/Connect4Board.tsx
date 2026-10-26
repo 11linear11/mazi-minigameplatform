@@ -137,7 +137,10 @@ export default function Connect4Board({
       </div>
 
       {/* Connect 4 Board Container */}
-      <div className="relative w-full max-w-[420px] rounded-3xl bg-gradient-to-b from-indigo-950/90 via-slate-900 to-black p-4 border border-indigo-500/30 shadow-[0_0_35px_rgba(79,70,229,0.2)]">
+      <div
+        className="relative w-full max-w-[420px] rounded-3xl bg-gradient-to-b from-indigo-950/90 via-slate-900 to-black p-4 border border-indigo-500/30 shadow-[0_0_35px_rgba(79,70,229,0.2)]"
+        style={{ touchAction: "manipulation" }}
+      >
         {/* Drop Column Buttons (Ghost disc hover zone) */}
         <div className="grid grid-cols-7 gap-2 mb-2 px-1">
           {Array.from({ length: COLS }).map((_, c) => {

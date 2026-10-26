@@ -270,7 +270,11 @@ export default function ChatPanel({
       </div>
 
       {/* Input bar */}
-      <footer className="shrink-0 border-t border-outline bg-panel-dim/80 p-3 lg:p-4 backdrop-blur-xl relative" ref={emojiRef}>
+      <footer
+        className="shrink-0 border-t border-outline bg-panel-dim p-3 lg:p-4 backdrop-blur-xl relative z-10"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 12px))" }}
+        ref={emojiRef}
+      >
         {showEmoji && (
           <div className="absolute bottom-full right-4 mb-3 z-50 shadow-2xl rounded-2xl overflow-hidden border border-outline" dir="ltr">
             <EmojiPicker

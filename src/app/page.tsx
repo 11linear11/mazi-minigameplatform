@@ -796,7 +796,7 @@ export default function HomePage() {
       {showLoading ? (
         <LoadingScreen progress={loadingProgress} onComplete={handleLoadingComplete} />
       ) : (
-      <main className="h-screen flex flex-col overflow-hidden">
+      <main className="fixed inset-0 w-full h-full flex flex-col overflow-hidden">
       {/* Mobile Header */}
       <header className="shrink-0 flex items-center justify-between border-b border-outline bg-panel-dim/80 px-4 py-3 backdrop-blur-md lg:hidden">
         <button
@@ -1022,7 +1022,7 @@ export default function HomePage() {
       </div>
 
       {/* Mobile Chat Area */}
-      <div className="flex-1 min-h-0 overflow-hidden lg:hidden">
+      <div className="flex-1 min-h-0 overflow-hidden lg:hidden flex flex-col h-full">
         {activeDMUser ? (
           <DirectChatPanel
             partner={activeDMUser}

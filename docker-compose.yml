@@ -12,11 +12,11 @@ services:
       - mazi-avatars:/app/server/public/avatars
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4000/health"]
+      interval: 5s
+      timeout: 3s
       retries: 5
-      start_period: 20s
+      start_period: 5s
 
   frontend:
     build:

@@ -374,7 +374,7 @@ export default function DirectChatPanel({
       </div>
 
       {/* Input bar */}
-      <div className="sticky bottom-0 z-20 border-t border-outline bg-panel-dim/95 p-4 backdrop-blur-md relative">
+      <div className="sticky bottom-0 z-20 border-t border-outline bg-panel-dim/95 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md relative">
         {showEmoji && (
           <div ref={emojiRef} className="absolute bottom-16 right-4 z-30 shadow-2xl">
             <EmojiPicker

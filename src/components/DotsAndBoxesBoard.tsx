@@ -29,7 +29,7 @@ const S = 100;
 const SVG_SIZE = 2 * PAD + Math.max(ROWS, COLS) * S;
 const DOT_R = 6;
 const LINE_W = 6;
-const HIT_W = 24;
+const HIT_W = 42; // Generous touch target for finger taps on mobile
 
 const C1 = "#e9c400";
 const C1_BG = "rgba(233, 196, 0, 0.22)";
@@ -156,7 +156,7 @@ export default function DotsAndBoxesBoard({ state, currentUserId, isMyTurn, isWa
 
       {/* SVG Board */}
       <div className="w-full max-w-sm rounded-2xl bg-black/40 p-2 border border-white/5 shadow-2xl">
-        <svg viewBox={viewBox} className="w-full">
+        <svg viewBox={viewBox} className="w-full select-none" style={{ touchAction: "manipulation" }}>
           {/* Box fills */}
           {Array.from({ length: ROWS }).map((_, r) =>
             Array.from({ length: COLS }).map((_, c) => {

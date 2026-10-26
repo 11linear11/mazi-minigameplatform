@@ -375,10 +375,14 @@ export default function ChessBoard(props: ChessBoardProps) {
       </div>
 
       {/* Board */}
-      <div className="w-full max-w-[min(100%,450px)] aspect-square relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 mx-auto">
+      <div
+        className="w-full max-w-[min(100%,450px)] aspect-square relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 mx-auto select-none"
+        style={{ touchAction: "none" }}
+      >
         <div
           ref={containerRef}
           className="cg-wrap cg-board-wrap w-full h-full"
+          style={{ touchAction: "none" }}
         />
 
         {/* Promotion Dialog */}
