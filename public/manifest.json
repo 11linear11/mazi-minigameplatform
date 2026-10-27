@@ -1,0 +1,27 @@
+{
+  "name": "MazI GameChat",
+  "short_name": "MazI",
+  "description": "پلتفرم چت گروهی و بازی‌های آنلاین چندنفره مازی",
+  "start_url": "https://mazi.mozzone.ir/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080c14",
+  "theme_color": "#080c14",
+  "lang": "fa",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/assets/images/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/images/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,11 +1,21 @@
 import "./globals.css";
 import type { ReactNode } from "react";
 
-import type { Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 
-export const metadata = {
-  title: "MazI",
-  description: "Chat + Games with friends",
+export const metadata: Metadata = {
+  title: "MazI - پلتفرم چت و بازی آنلاین",
+  description: "چت گروهی و بازی‌های آنلاین چندنفره مازی",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MazI",
+  },
+  icons: {
+    icon: "/assets/images/logo.png",
+    apple: "/assets/images/logo.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -20,6 +30,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="fa" dir="rtl">
+      <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+      </head>
       <body>{children}</body>
     </html>
   );

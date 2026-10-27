@@ -1,0 +1,14 @@
+{
+  "appId": "ir.mozzone.mazi",
+  "appName": "MazI",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://mazi.mozzone.ir",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
+  }
+}

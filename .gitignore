@@ -7,3 +7,16 @@ tsconfig.tsbuildinfo
 *.log
 .env
 .env.local
+
+# Desktop build artifacts
+desktop/node_modules/
+desktop/dist/
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+*.apk
+*.aab
+*.exe
